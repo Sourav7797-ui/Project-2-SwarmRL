@@ -1,33 +1,32 @@
 from dataclasses import dataclass
 
-
 @dataclass(frozen=True)
 class SwarmEnvConfig:
-    # --- Swarm ---
     num_agents: int = 50
-    k_nearest: int = 6              # neighbors included in each agent's observation
+    k_nearest: int = 6
 
-    # --- World (continuous 3D disaster zone) ---
-    world_size_xy: float = 200.0    # meters, world spans [0, world_size_xy] in x and y
-    world_height: float = 40.0      # meters, world spans [0, world_height] in z
-    voxel_size: float = 4.0         # meters per coverage-grid cell edge
+    world_size_xy: float = 200.0
+    world_height: float = 40.0
+    voxel_size: float = 4.0
 
-    # --- Physics limits (used to clip the continuous action space) ---
-    max_velocity: float = 8.0       # m/s
-    max_pitch_rate: float = 1.0     # rad/s
-    max_yaw_rate: float = 1.5       # rad/s
-    dt: float = 0.1                 # seconds per simulation tick
+    max_velocity: float = 8.0       
+    max_pitch_rate: float = 1.0
+    max_yaw_rate: float = 1.5
+    dt: float = 0.1
 
-    # --- Episode ---
+    max_acceleration: float = 4.0  
+    drag_coefficient: float = 0.02  
+
+    drone_radius: float = 0.5       
+    obstacle_radius: float = 3.0    
+
     max_episode_steps: int = 1000
-    battery_capacity: float = 1.0   # normalized, drains linearly with dt
-
-    # --- Sensing ---
-    lidar_range: float = 30.0       # meters, max sensed distance to neighbors/obstacles
+    battery_capacity: float = 1.0
+   
+    lidar_range: float = 30.0
     num_obstacles: int = 8
 
-    # --- Safety ---
-    min_separation: float = 2.0     # meters, closer than this = collision
+    min_separation: float = 2.0
 
     @property
     def voxel_grid_shape(self) -> tuple[int, int, int]:
