@@ -1,10 +1,16 @@
+"""SwarmEnv: a continuous 3D disaster-zone search environment for
+50 autonomous drones, built on PettingZoo's ParallelEnv API."""
 from __future__ import annotations
+
 import functools
+
 import numpy as np
 from gymnasium.spaces import Box
 from pettingzoo import ParallelEnv
+
 from backend.env.config import SwarmEnvConfig
 from backend.reward.reward_shaping import RewardShaper
+
 
 class SwarmEnv(ParallelEnv):
     metadata = {"render_modes": ["human", "none"], "name": "swarmrl_v0"}
@@ -16,21 +22,16 @@ class SwarmEnv(ParallelEnv):
         self.possible_agents = [f"drone_{i}" for i in range(self.config.num_agents)]
         self.agents = list(self.possible_agents)
 
-        # Obs vector layout per agent:
-        #   k_nearest * (distance, bearing_xy, bearing_z) neighbor readings
-        #   + 1 distance-to-nearest-obstacle
-        #   + 1 local coverage-density
-        #   + 1 remaining battery/time budget
         self._obs_dim = self.config.k_nearest * 3 + 3
-
         self.reward_shaper = RewardShaper(self.config)
 
         # Runtime state, populated in reset()
-        self.positions: np.ndarray | None = None      # (N, 3)
-        self.headings: np.ndarray | None = None        # (N, 2) pitch, yaw
-        self.battery: np.ndarray | None = None          # (N,)
-        self.obstacles: np.ndarray | None = None        # (num_obstacles, 3)
-        self.coverage_grid: np.ndarray | None = None    # bool, voxel_grid_shape
+        self.positions: np.ndarray | None = None
+        self.headings: np.ndarray | None = None
+        self.speed: np.ndarray | None = None            # (N,) current actual speed (momentum)
+        self.battery: np.ndarray | None = None
+        self.obstacles: np.ndarray | None = None
+        self.coverage_grid: np.ndarray | None = None
         self._step_count = 0
 
     @functools.lru_cache(maxsize=None)
@@ -57,7 +58,8 @@ class SwarmEnv(ParallelEnv):
             high=[c.world_size_xy, c.world_size_xy, c.world_height],
             size=(n, 3),
         ).astype(np.float32)
-        self.headings = np.zeros((n, 2), dtype=np.float32)  # pitch, yaw
+        self.headings = np.zeros((n, 2), dtype=np.float32)
+        self.speed = np.zeros(n, dtype=np.float32)           # start at rest
         self.battery = np.full(n, c.battery_capacity, dtype=np.float32)
 
         self.obstacles = rng.uniform(
@@ -77,37 +79,47 @@ class SwarmEnv(ParallelEnv):
         c = self.config
         n = len(self.agents)
 
-        vel = np.zeros(n, dtype=np.float32)
+        target_speed = np.zeros(n, dtype=np.float32)
         for i, agent in enumerate(self.agents):
             a = np.clip(actions[agent], self.action_space(agent).low, self.action_space(agent).high)
-            velocity, pitch_rate, yaw_rate = a
+            commanded_velocity, pitch_rate, yaw_rate = a
             self.headings[i, 0] += pitch_rate * c.dt
             self.headings[i, 1] += yaw_rate * c.dt
-            vel[i] = velocity
+            target_speed[i] = commanded_velocity
 
-        # Kinematic integration: move each drone along its heading vector.
+        # --- Momentum model ---
+        # Actual speed eases toward the commanded target under an
+        # acceleration cap, then loses a small fraction to drag each tick.
+        speed_error = target_speed - self.speed
+        max_delta = c.max_acceleration * c.dt
+        speed_delta = np.clip(speed_error, -max_delta, max_delta)
+        self.speed = (self.speed + speed_delta) * (1.0 - c.drag_coefficient)
+        self.speed = np.clip(self.speed, 0.0, c.max_velocity)
+
         pitch = self.headings[:, 0]
         yaw = self.headings[:, 1]
         direction = np.stack(
             [np.cos(pitch) * np.cos(yaw), np.cos(pitch) * np.sin(yaw), np.sin(pitch)],
             axis=1,
         )
-        self.positions += direction * vel[:, None] * c.dt
+        self.positions += direction * self.speed[:, None] * c.dt
         self.positions[:, 0] = np.clip(self.positions[:, 0], 0.0, c.world_size_xy)
         self.positions[:, 1] = np.clip(self.positions[:, 1], 0.0, c.world_size_xy)
         self.positions[:, 2] = np.clip(self.positions[:, 2], 0.0, c.world_height)
 
         self.battery = np.clip(self.battery - c.dt / (c.max_episode_steps * c.dt), 0.0, 1.0)
 
+        obstacle_collisions = self._resolve_obstacle_collisions()
         newly_covered = self._mark_coverage()
-        collisions = self._detect_collisions()
+        drone_collisions = self._detect_collisions()
 
         rewards = self.reward_shaper.compute(
             newly_covered_by_agent=newly_covered,
-            collisions_by_agent=collisions,
+            collisions_by_agent=drone_collisions,
             positions=self.positions,
             world_size_xy=c.world_size_xy,
             world_height=c.world_height,
+            obstacle_collisions_by_agent=obstacle_collisions,
         )
 
         self._step_count += 1
@@ -117,7 +129,12 @@ class SwarmEnv(ParallelEnv):
 
         observations = self._build_observations()
         infos = {
-            agent: {"collision": bool(collisions[i]), "battery": float(self.battery[i])}
+            agent: {
+                "collision": bool(drone_collisions[i]),
+                "obstacle_collision": bool(obstacle_collisions[i]),
+                "battery": float(self.battery[i]),
+                "speed": float(self.speed[i]),
+            }
             for i, agent in enumerate(self.agents)
         }
 
@@ -127,9 +144,6 @@ class SwarmEnv(ParallelEnv):
         return observations, rewards, terminations, truncations, infos
 
     def _mark_coverage(self) -> np.ndarray:
-        """Voxelize current positions, mark visited cells, return a
-        per-agent bool array of whether that agent revealed a new cell
-        this tick (drives the +1 exploration reward)."""
         c = self.config
         idx = (self.positions // c.voxel_size).astype(int)
         idx[:, 0] = np.clip(idx[:, 0], 0, self.coverage_grid.shape[0] - 1)
@@ -144,13 +158,44 @@ class SwarmEnv(ParallelEnv):
         return newly_covered
 
     def _detect_collisions(self) -> np.ndarray:
-        """O(N^2) pairwise distance check. Fine for N=50; swap for a
-        spatial hash / KD-tree if the swarm size grows substantially."""
         diffs = self.positions[:, None, :] - self.positions[None, :, :]
         dists = np.linalg.norm(diffs, axis=-1)
         np.fill_diagonal(dists, np.inf)
         close = dists < self.config.min_separation
         return close.any(axis=1)
+
+    def _resolve_obstacle_collisions(self) -> np.ndarray:
+        """Obstacles are now physically solid (Day 1 only sensed them).
+        Pushes penetrating drones back to the obstacle surface and zeroes
+        their speed, so re-penetrating next tick isn't free."""
+        c = self.config
+        n = len(self.positions)
+        collided = np.zeros(n, dtype=bool)
+        min_dist = c.drone_radius + c.obstacle_radius
+
+        if len(self.obstacles) == 0:
+            return collided  # no obstacles configured (e.g. curriculum stage 1)
+
+        diffs = self.positions[:, None, :] - self.obstacles[None, :, :]
+        dists = np.linalg.norm(diffs, axis=-1)
+        nearest_obstacle = np.argmin(dists, axis=1)
+        nearest_dist = dists[np.arange(n), nearest_obstacle]
+
+        penetrating = nearest_dist < min_dist
+        collided[penetrating] = True
+
+        for i in np.where(penetrating)[0]:
+            obs_idx = nearest_obstacle[i]
+            vec = self.positions[i] - self.obstacles[obs_idx]
+            dist = nearest_dist[i]
+            if dist < 1e-6:
+                push_dir = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+            else:
+                push_dir = vec / dist
+            self.positions[i] = self.obstacles[obs_idx] + push_dir * min_dist
+            self.speed[i] = 0.0
+
+        return collided
 
     def _build_observations(self) -> dict[str, np.ndarray]:
         c = self.config
@@ -168,17 +213,19 @@ class SwarmEnv(ParallelEnv):
                 bearing_z = np.arctan2(diffs[j, 2], np.linalg.norm(diffs[j, :2]) + 1e-6)
                 neighbor_feats.extend([d, bearing_xy, bearing_z])
             while len(neighbor_feats) < c.k_nearest * 3:
-                neighbor_feats.extend([c.lidar_range, 0.0, 0.0])  # pad if <k neighbors
+                neighbor_feats.extend([c.lidar_range, 0.0, 0.0])
 
-            obstacle_dists = np.linalg.norm(self.obstacles - self.positions[i], axis=1)
-            nearest_obstacle = float(min(obstacle_dists.min(), c.lidar_range))
+            if len(self.obstacles) > 0:
+                obstacle_dists = np.linalg.norm(self.obstacles - self.positions[i], axis=1)
+                nearest_obstacle = float(min(obstacle_dists.min(), c.lidar_range))
+            else:
+                nearest_obstacle = c.lidar_range
 
             vx, vy, vz = (self.positions[i] // c.voxel_size).astype(int)
             vx = np.clip(vx, 0, self.coverage_grid.shape[0] - 1)
             vy = np.clip(vy, 0, self.coverage_grid.shape[1] - 1)
             vz = np.clip(vz, 0, self.coverage_grid.shape[2] - 1)
             local_density = float(self.coverage_grid[vx, vy, vz])
-
             battery_remaining = float(self.battery[i])
 
             obs[agent] = np.array(
