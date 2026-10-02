@@ -34,6 +34,10 @@ class SwarmEnv(ParallelEnv):
         self.coverage_grid: np.ndarray | None = None
         self._step_count = 0
 
+        # Lazy-initialized matplotlib state for render_mode="human" (Day 3)
+        self._fig = None
+        self._ax = None
+
     @functools.lru_cache(maxsize=None)
     def observation_space(self, agent):
         return Box(low=-np.inf, high=np.inf, shape=(self._obs_dim,), dtype=np.float32)
@@ -198,46 +202,139 @@ class SwarmEnv(ParallelEnv):
         return collided
 
     def _build_observations(self) -> dict[str, np.ndarray]:
+        """Vectorized version of the per-agent observation builder (Day 3).
+        Replaces the Day 1/2 Python-loop version with broadcasted numpy ops —
+        this function gets called every tick, including millions of times
+        during Task 3's RL rollouts, so the loop-vs-vector difference matters
+        far more here than it does in, say, _resolve_obstacle_collisions.
+
+        Produces bit-for-bit the same values as the old loop version (see
+        tests/test_day3_edge_cases.py::test_vectorized_matches_reference_loop),
+        just computed without a per-agent Python loop.
+        """
         c = self.config
-        obs = {}
-        for i, agent in enumerate(self.agents):
-            diffs = self.positions - self.positions[i]
-            dists = np.linalg.norm(diffs, axis=1)
-            dists[i] = np.inf
-            nearest_idx = np.argsort(dists)[: c.k_nearest]
+        n = len(self.agents)
+        pos = self.positions
+        k = c.k_nearest
 
-            neighbor_feats = []
-            for j in nearest_idx:
-                d = min(dists[j], c.lidar_range)
-                bearing_xy = np.arctan2(diffs[j, 1], diffs[j, 0])
-                bearing_z = np.arctan2(diffs[j, 2], np.linalg.norm(diffs[j, :2]) + 1e-6)
-                neighbor_feats.extend([d, bearing_xy, bearing_z])
-            while len(neighbor_feats) < c.k_nearest * 3:
-                neighbor_feats.extend([c.lidar_range, 0.0, 0.0])
+        # ---- Neighbor distance/bearing block ----
+        # diffs_all[i, j] = pos[j] - pos[i]  (vector FROM agent i TO agent j),
+        # matching the reference loop's `diffs = positions - positions[i]`
+        # convention. Getting this backwards flips every bearing's sign
+        # while leaving distances (norm is sign-blind) looking correct —
+        # an easy way to ship a silently-wrong observation.
+        diffs_all = pos[None, :, :] - pos[:, None, :]            # (n, n, 3)
+        dists_all = np.linalg.norm(diffs_all, axis=-1)           # (n, n)
+        np.fill_diagonal(dists_all, np.inf)                      # exclude self
 
-            if len(self.obstacles) > 0:
-                obstacle_dists = np.linalg.norm(self.obstacles - self.positions[i], axis=1)
-                nearest_obstacle = float(min(obstacle_dists.min(), c.lidar_range))
-            else:
-                nearest_obstacle = c.lidar_range
+        # Self always sorts last (distance=inf), so taking the first
+        # `valid_neighbors` columns of the full sort never includes self
+        # as long as valid_neighbors <= n - 1.
+        valid_neighbors = min(k, max(n - 1, 0))
+        full_sorted = np.argsort(dists_all, axis=1)              # (n, n)
+        nearest_idx = full_sorted[:, :valid_neighbors]           # (n, valid_neighbors)
 
-            vx, vy, vz = (self.positions[i] // c.voxel_size).astype(int)
-            vx = np.clip(vx, 0, self.coverage_grid.shape[0] - 1)
-            vy = np.clip(vy, 0, self.coverage_grid.shape[1] - 1)
-            vz = np.clip(vz, 0, self.coverage_grid.shape[2] - 1)
-            local_density = float(self.coverage_grid[vx, vy, vz])
-            battery_remaining = float(self.battery[i])
+        row_idx = np.arange(n)[:, None]                          # (n, 1), broadcasts
+        gathered_diffs = diffs_all[row_idx, nearest_idx]         # (n, valid_neighbors, 3)
+        gathered_dists = dists_all[row_idx, nearest_idx]         # (n, valid_neighbors)
+        gathered_dists = np.minimum(gathered_dists, c.lidar_range)
 
-            obs[agent] = np.array(
-                neighbor_feats + [nearest_obstacle, local_density, battery_remaining],
-                dtype=np.float32,
-            )
-        return obs
+        bearing_xy = np.arctan2(gathered_diffs[:, :, 1], gathered_diffs[:, :, 0])
+        bearing_z = np.arctan2(
+            gathered_diffs[:, :, 2],
+            np.linalg.norm(gathered_diffs[:, :, :2], axis=-1) + 1e-6,
+        )
+
+        pad_count = k - valid_neighbors
+        if pad_count > 0:
+            # Fewer than k real neighbors exist (small swarm / near boundary
+            # of the sorted list) -> pad with "nothing sensed" convention:
+            # max lidar range, zero bearing. Matches Day 1's loop behavior.
+            pad_dist = np.full((n, pad_count), c.lidar_range, dtype=np.float32)
+            pad_bearing = np.zeros((n, pad_count), dtype=np.float32)
+            gathered_dists = np.concatenate([gathered_dists, pad_dist], axis=1)
+            bearing_xy = np.concatenate([bearing_xy, pad_bearing], axis=1)
+            bearing_z = np.concatenate([bearing_z, pad_bearing], axis=1)
+
+        # Interleave to [d0, bxy0, bz0, d1, bxy1, bz1, ...] — same layout
+        # the reward/training code and the Day 1 loop version both expect.
+        neighbor_feats = np.stack([gathered_dists, bearing_xy, bearing_z], axis=-1)  # (n, k, 3)
+        neighbor_feats = neighbor_feats.reshape(n, k * 3).astype(np.float32)
+
+        # ---- Nearest obstacle distance ----
+        if len(self.obstacles) > 0:
+            obs_diffs = pos[:, None, :] - self.obstacles[None, :, :]     # (n, num_obstacles, 3)
+            obs_dists = np.linalg.norm(obs_diffs, axis=-1)               # (n, num_obstacles)
+            nearest_obstacle = np.minimum(obs_dists.min(axis=1), c.lidar_range)
+        else:
+            nearest_obstacle = np.full(n, c.lidar_range, dtype=np.float32)
+
+        # ---- Local coverage density ----
+        voxel_idx = (pos // c.voxel_size).astype(int)
+        voxel_idx[:, 0] = np.clip(voxel_idx[:, 0], 0, self.coverage_grid.shape[0] - 1)
+        voxel_idx[:, 1] = np.clip(voxel_idx[:, 1], 0, self.coverage_grid.shape[1] - 1)
+        voxel_idx[:, 2] = np.clip(voxel_idx[:, 2], 0, self.coverage_grid.shape[2] - 1)
+        local_density = self.coverage_grid[
+            voxel_idx[:, 0], voxel_idx[:, 1], voxel_idx[:, 2]
+        ].astype(np.float32)
+
+        battery_remaining = self.battery.astype(np.float32)
+
+        obs_matrix = np.concatenate(
+            [
+                neighbor_feats,
+                nearest_obstacle[:, None].astype(np.float32),
+                local_density[:, None],
+                battery_remaining[:, None],
+            ],
+            axis=1,
+        ).astype(np.float32)  # (n, obs_dim)
+
+        return {agent: obs_matrix[i] for i, agent in enumerate(self.agents)}
 
     def render(self):
-        if self.render_mode == "human":
-            print(f"step={self._step_count} agents={len(self.agents)} "
-                  f"coverage={self.coverage_grid.mean():.3f}")
+        if self.render_mode != "human":
+            return
+
+        # Lazy import: matplotlib is a debug-only dependency, not needed
+        # for training/serving, so we don't pull it in unless someone
+        # actually asks for the human-viewable render mode.
+        import matplotlib.pyplot as plt
+
+        if self._fig is None:
+            plt.ion()
+            self._fig = plt.figure(figsize=(8, 8))
+            self._ax = self._fig.add_subplot(111, projection="3d")
+
+        c = self.config
+        ax = self._ax
+        ax.cla()
+
+        ax.scatter(
+            self.positions[:, 0], self.positions[:, 1], self.positions[:, 2],
+            c="tab:blue", s=25, label="drones", depthshade=True,
+        )
+        if len(self.obstacles) > 0:
+            ax.scatter(
+                self.obstacles[:, 0], self.obstacles[:, 1], self.obstacles[:, 2],
+                c="tab:red", s=200, marker="^", label="obstacles", alpha=0.7,
+            )
+
+        ax.set_xlim(0, c.world_size_xy)
+        ax.set_ylim(0, c.world_size_xy)
+        ax.set_zlim(0, c.world_height)
+        ax.set_xlabel("x (m)")
+        ax.set_ylabel("y (m)")
+        ax.set_zlabel("z (m)")
+        coverage_pct = self.coverage_grid.mean() * 100 if self.coverage_grid is not None else 0.0
+        ax.set_title(f"step={self._step_count}  agents={len(self.agents)}  coverage={coverage_pct:.1f}%")
+        ax.legend(loc="upper right")
+
+        plt.pause(0.001)  # yields to the GUI event loop so the window actually updates
 
     def close(self):
-        pass
+        if self._fig is not None:
+            import matplotlib.pyplot as plt
+            plt.close(self._fig)
+            self._fig = None
+            self._ax = None
