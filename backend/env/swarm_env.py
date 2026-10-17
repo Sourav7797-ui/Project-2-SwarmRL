@@ -25,6 +25,13 @@ class SwarmEnv(ParallelEnv):
         self._obs_dim = self.config.k_nearest * 3 + 3
         self.reward_shaper = RewardShaper(self.config)
 
+        # Optional (Day 5): assign a RewardComponentLogger instance here
+        # before running an episode to get a per-component reward
+        # breakdown (exploration vs collision vs boundary vs team bonus),
+        # not just the scalar total RLlib trains against. Left as None by
+        # default so there's zero overhead when nobody's using it.
+        self.reward_logger = None
+
         # Runtime state, populated in reset()
         self.positions: np.ndarray | None = None
         self.headings: np.ndarray | None = None
@@ -117,7 +124,7 @@ class SwarmEnv(ParallelEnv):
         newly_covered = self._mark_coverage()
         drone_collisions = self._detect_collisions()
 
-        rewards = self.reward_shaper.compute(
+        rewards, reward_breakdown = self.reward_shaper.compute_with_breakdown(
             newly_covered_by_agent=newly_covered,
             collisions_by_agent=drone_collisions,
             positions=self.positions,
@@ -125,6 +132,8 @@ class SwarmEnv(ParallelEnv):
             world_height=c.world_height,
             obstacle_collisions_by_agent=obstacle_collisions,
         )
+        if self.reward_logger is not None:
+            self.reward_logger.log_step(reward_breakdown)
 
         self._step_count += 1
         truncated = self._step_count >= c.max_episode_steps
