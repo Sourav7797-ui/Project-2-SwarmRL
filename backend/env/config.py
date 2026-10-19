@@ -38,6 +38,16 @@ class SwarmEnvConfig:
     # --- Sensing ---
     lidar_range: float = 30.0
     num_obstacles: int = 8
+    # Day 7: the coverage feature samples the 3x3x3 block of voxels centred
+    # this far AHEAD of the drone along its heading. 8 m = 2 voxels, so the
+    # block (1-3 voxels ahead) never includes the drone's own voxel, which
+    # is always already marked. (The old feature read the own voxel and was
+    # therefore constant 1.0.)
+    coverage_lookahead: float = 8.0
+
+    # --- Reset ---
+    # Day 7: spawn each drone with a random yaw instead of all facing +x.
+    randomize_initial_heading: bool = True
 
     # --- Safety ---
     min_separation: float = 2.0

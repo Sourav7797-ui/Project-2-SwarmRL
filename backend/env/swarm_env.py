@@ -22,7 +22,18 @@ class SwarmEnv(ParallelEnv):
         self.possible_agents = [f"drone_{i}" for i in range(self.config.num_agents)]
         self.agents = list(self.possible_agents)
 
-        self._obs_dim = self.config.k_nearest * 3 + 3
+        # Observation layout (Day 7), per agent:
+        #   [0 : 3k]  k nearest neighbours as (distance, bearing_xy, bearing_z),
+        #             bearings in the drone's BODY frame (relative to its heading)
+        #   [3k]      distance to nearest obstacle
+        #   [3k+1]    coverage ahead: fraction of explored voxels in the 3x3x3
+        #             block `coverage_lookahead` metres in front of the drone
+        #   [3k+2]    battery remaining
+        #   [3k+3]    distance to nearest xy wall (clipped to lidar_range)
+        #   [3k+4]    body-frame bearing to that wall (0 if none within range)
+        #   [3k+5]    altitude, normalised to [-1, 1] (0 = mid-height)
+        #   [3k+6]    own pitch (rad)
+        self._obs_dim = self.config.k_nearest * 3 + 7
         self.reward_shaper = RewardShaper(self.config)
         self.reward_logger = None
 
@@ -79,6 +90,11 @@ class SwarmEnv(ParallelEnv):
             high=[c.world_size_xy, c.world_size_xy, c.world_height],
             size=(c.num_obstacles, 3),
         ).astype(np.float32)
+
+        # Drawn after positions and obstacles so a given seed still produces
+        # the same positions and obstacles as before this option existed.
+        if c.randomize_initial_heading:
+            self.headings[:, 1] = rng.uniform(0.0, 2.0 * np.pi, size=n).astype(np.float32)
 
         self.coverage_grid = np.zeros(c.voxel_grid_shape, dtype=bool)
         self._mark_coverage()
@@ -217,12 +233,21 @@ class SwarmEnv(ParallelEnv):
 
         return collided
 
+    @staticmethod
+    def _wrap_angle(a: np.ndarray) -> np.ndarray:
+        """Wrap angles to [-pi, pi)."""
+        return (a + np.pi) % (2.0 * np.pi) - np.pi
+
     def _build_observations(self) -> dict[str, np.ndarray]:
         c = self.config
         n = len(self.agents)
         pos = self.positions
         k = c.k_nearest
+        pitch = self.headings[:, 0]
+        yaw = self.headings[:, 1]
 
+        # ---- Neighbour block: distance + BODY-frame bearings ----
+        # diffs_all[i, j] = pos[j] - pos[i]  (vector FROM agent i TO agent j)
         diffs_all = pos[None, :, :] - pos[:, None, :]
         dists_all = np.linalg.norm(diffs_all, axis=-1)
         np.fill_diagonal(dists_all, np.inf)
@@ -236,11 +261,16 @@ class SwarmEnv(ParallelEnv):
         gathered_dists = dists_all[row_idx, nearest_idx]
         gathered_dists = np.minimum(gathered_dists, c.lidar_range)
 
-        bearing_xy = np.arctan2(gathered_diffs[:, :, 1], gathered_diffs[:, :, 0])
-        bearing_z = np.arctan2(
+        # World-frame bearings, then rotated into the drone's own frame:
+        # bearing 0 = dead ahead, +pi/2 = to its left. Without this the
+        # policy cannot tell which way to turn to avoid a neighbour.
+        world_bearing_xy = np.arctan2(gathered_diffs[:, :, 1], gathered_diffs[:, :, 0])
+        world_bearing_z = np.arctan2(
             gathered_diffs[:, :, 2],
             np.linalg.norm(gathered_diffs[:, :, :2], axis=-1) + 1e-6,
         )
+        bearing_xy = self._wrap_angle(world_bearing_xy - yaw[:, None])
+        bearing_z = world_bearing_z - pitch[:, None]
 
         pad_count = k - valid_neighbors
         if pad_count > 0:
@@ -253,6 +283,7 @@ class SwarmEnv(ParallelEnv):
         neighbor_feats = np.stack([gathered_dists, bearing_xy, bearing_z], axis=-1)
         neighbor_feats = neighbor_feats.reshape(n, k * 3).astype(np.float32)
 
+        # ---- Nearest obstacle distance ----
         if len(self.obstacles) > 0:
             obs_diffs = pos[:, None, :] - self.obstacles[None, :, :]
             obs_dists = np.linalg.norm(obs_diffs, axis=-1)
@@ -260,22 +291,59 @@ class SwarmEnv(ParallelEnv):
         else:
             nearest_obstacle = np.full(n, c.lidar_range, dtype=np.float32)
 
-        voxel_idx = (pos // c.voxel_size).astype(int)
-        voxel_idx[:, 0] = np.clip(voxel_idx[:, 0], 0, self.coverage_grid.shape[0] - 1)
-        voxel_idx[:, 1] = np.clip(voxel_idx[:, 1], 0, self.coverage_grid.shape[1] - 1)
-        voxel_idx[:, 2] = np.clip(voxel_idx[:, 2], 0, self.coverage_grid.shape[2] - 1)
-        local_density = self.coverage_grid[
-            voxel_idx[:, 0], voxel_idx[:, 1], voxel_idx[:, 2]
-        ].astype(np.float32)
+        # ---- Coverage ahead ----
+        # Fraction of explored voxels in the 3x3x3 block centred
+        # `coverage_lookahead` metres in front of the drone. Cells outside the
+        # world count as explored, so walls never look like places worth
+        # flying to.
+        direction = np.stack(
+            [np.cos(pitch) * np.cos(yaw), np.cos(pitch) * np.sin(yaw), np.sin(pitch)],
+            axis=1,
+        )
+        world_max = np.array([c.world_size_xy, c.world_size_xy, c.world_height], dtype=np.float32)
+        ahead = np.clip(pos + direction * c.coverage_lookahead, 0.0, world_max)
+        grid_shape = np.array(self.coverage_grid.shape)
+        ahead_idx = np.minimum((ahead // c.voxel_size).astype(int), grid_shape - 1)
+
+        padded = np.pad(self.coverage_grid, 1, constant_values=True)
+        covered_count = np.zeros(n, dtype=np.float32)
+        for dx in range(3):
+            for dy in range(3):
+                for dz in range(3):
+                    covered_count += padded[
+                        ahead_idx[:, 0] + dx, ahead_idx[:, 1] + dy, ahead_idx[:, 2] + dz
+                    ]
+        coverage_ahead = covered_count / 27.0
 
         battery_remaining = self.battery.astype(np.float32)
+
+        # ---- Wall features (body frame) ----
+        x, y, z = pos[:, 0], pos[:, 1], pos[:, 2]
+        wall_dists = np.stack(
+            [x, c.world_size_xy - x, y, c.world_size_xy - y], axis=1
+        )  # distance to the x=0, x=W, y=0, y=W walls
+        nearest_wall = np.argmin(wall_dists, axis=1)
+        wall_dist = wall_dists[np.arange(n), nearest_wall]
+        # World direction pointing at each wall: x=0 -> pi, x=W -> 0, y=0 -> -pi/2, y=W -> pi/2
+        wall_world_dir = np.array([np.pi, 0.0, -np.pi / 2.0, np.pi / 2.0])[nearest_wall]
+        wall_bearing = self._wrap_angle(wall_world_dir - yaw)
+        wall_in_range = wall_dist < c.lidar_range
+        wall_bearing = np.where(wall_in_range, wall_bearing, 0.0)  # "nothing sensed" convention
+        wall_dist = np.minimum(wall_dist, c.lidar_range)
+
+        half_h = c.world_height / 2.0
+        altitude_norm = (z - half_h) / half_h
 
         obs_matrix = np.concatenate(
             [
                 neighbor_feats,
-                nearest_obstacle[:, None].astype(np.float32),
-                local_density[:, None],
+                nearest_obstacle[:, None],
+                coverage_ahead[:, None],
                 battery_remaining[:, None],
+                wall_dist[:, None],
+                wall_bearing[:, None],
+                altitude_norm[:, None],
+                pitch[:, None],
             ],
             axis=1,
         ).astype(np.float32)

@@ -1,6 +1,6 @@
 """Day-6: reward distribution analysis (run BEFORE any RL training).
 
-Runs full episodes under simple baseline policies with a
+Runs full episodes under three simple baseline policies with a
 RewardComponentLogger attached, then reports where the reward comes from.
 Two questions this answers:
 
@@ -32,19 +32,19 @@ from backend.reward.reward_shaping import ALL_COMPONENTS
 
 
 # ----------------------------- baseline policies -----------------------------
-def random_policy(env, agents, rng):
+def random_policy(env, agents, rng, obs):
     return {
         a: rng.uniform(env.action_space(a).low, env.action_space(a).high).astype(np.float32)
         for a in agents
     }
 
 
-def stationary_policy(env, agents, rng):
+def stationary_policy(env, agents, rng, obs):
     """Command zero velocity and zero turn: the 'do nothing' baseline."""
     return {a: np.zeros(3, dtype=np.float32) for a in agents}
 
 
-def cruise_policy(env, agents, rng):
+def cruise_policy(env, agents, rng, obs):
     """Full speed, no turning, no pitch: drones fly straight until a wall."""
     top_speed = env.config.max_velocity
     return {a: np.array([top_speed, 0.0, 0.0], dtype=np.float32) for a in agents}
@@ -52,7 +52,7 @@ def cruise_policy(env, agents, rng):
 
 def _make_wander_policy(speed: float):
     """A careful mover: fixed speed, small random turns."""
-    def policy(env, agents, rng):
+    def policy(env, agents, rng, obs):
         c = env.config
         out = {}
         for a in agents:
@@ -60,6 +60,32 @@ def _make_wander_policy(speed: float):
             out[a] = np.array([speed, turn[0], turn[1]], dtype=np.float32)
         return out
     return policy
+
+
+def reactive_policy(env, agents, rng, obs):
+    """Uses ONLY the observation vector (no privileged state): steer away from
+    a nearby wall or neighbour, level out toward mid-height, and turn away when
+    the area ahead is already explored. Same 3 m/s as 'gentle', so any
+    difference between the two is down to what the observation lets it do."""
+    c = env.config
+    k = c.k_nearest
+    i_cov, i_wd, i_wb, i_alt, i_pitch = 3 * k + 1, 3 * k + 3, 3 * k + 4, 3 * k + 5, 3 * k + 6
+    out = {}
+    for a in agents:
+        o = obs[a]
+        yaw_rate = 0.0
+        wall_dist, wall_bearing = o[i_wd], o[i_wb]
+        nb_dist, nb_bearing = o[0], o[1]          # nearest neighbour
+        if wall_dist < 12.0 and abs(wall_bearing) < np.pi / 2:
+            yaw_rate = -(np.sign(wall_bearing) or 1.0) * c.max_yaw_rate     # wall ahead: turn away
+        elif nb_dist < 8.0 and abs(nb_bearing) < np.pi / 2:
+            yaw_rate = -(np.sign(nb_bearing) or 1.0) * c.max_yaw_rate       # neighbour ahead: turn away
+        elif o[i_cov] > 0.6:
+            yaw_rate = rng.uniform(-1.0, 1.0) * 0.5 * c.max_yaw_rate        # explored ahead: look elsewhere
+        target_pitch = -0.6 * o[i_alt]                                       # drift back toward mid-height
+        pitch_rate = float(np.clip((target_pitch - o[i_pitch]) * 2.0, -c.max_pitch_rate, c.max_pitch_rate))
+        out[a] = np.array([3.0, pitch_rate, yaw_rate], dtype=np.float32)
+    return out
 
 
 gentle_policy = _make_wander_policy(3.0)   # moderate speed
@@ -73,6 +99,7 @@ POLICIES = {
     "cruise": cruise_policy,
     "gentle": gentle_policy,
     "slow": slow_policy,
+    "reactive": reactive_policy,
 }
 
 
@@ -81,22 +108,16 @@ def run_episode(config: SwarmEnvConfig, policy_fn, seed: int) -> dict:
     env = SwarmEnv(config=config)
     logger = RewardComponentLogger()
     env.reward_logger = logger
-    env.reset(seed=seed)
+    obs, _ = env.reset(seed=seed)       # reset() now spawns random headings itself
     rng = np.random.default_rng(seed + 10_000)
-
-    # env.reset() starts every drone facing +x (heading 0,0). A policy that
-    # barely turns would then send the whole swarm into the same wall and
-    # measure a pile-up instead of the reward. Spread the headings so each
-    # baseline is judged on its own behavior.
-    env.headings[:, 1] = rng.uniform(0.0, 2.0 * np.pi, size=env.config.num_agents)
 
     drone_collision_ticks = 0
     obstacle_collision_ticks = 0
     agent_steps = 0
 
     while env.agents:
-        actions = policy_fn(env, env.agents, rng)
-        _, _, _, _, infos = env.step(actions)
+        actions = policy_fn(env, env.agents, rng, obs)
+        obs, _, _, _, infos = env.step(actions)
         for info in infos.values():
             drone_collision_ticks += int(info["collision"])
             obstacle_collision_ticks += int(info["obstacle_collision"])
@@ -142,20 +163,34 @@ def print_policy_report(name: str, agg: dict) -> None:
 def print_diagnosis(aggs: dict[str, dict]) -> None:
     print("\n=== diagnosis ===")
     nets = {name: a["net"] for name, a in aggs.items()}
-    best_name = max(nets, key=nets.get)
     print("net reward by policy: " + ", ".join(f"{n}={v:.1f}" for n, v in nets.items()))
 
-    # The decisive check: is there ANY sensible mover that out-earns standing
-    # still? If so, PPO has a path from "do nothing" toward exploring. Pure
-    # random/cruise flight are allowed to lose: they are crash-prone by design.
-    movers = {n: v for n, v in nets.items() if n in ("gentle", "slow")}
-    best_mover = max(movers, key=movers.get)
-    if nets["stationary"] >= movers[best_mover]:
-        print("WARNING: no careful mover beats 'stationary'. Standing still is a local optimum")
-        print("         PPO will fall into. Raise exploration reward or lower penalties.")
+    # Decisive check: does a policy that uses ONLY what a drone can observe beat
+    # standing still? That tests both that the reward leaves a path toward
+    # exploring AND that the observation carries enough information to act on it.
+    # (Blind movers are not the right test: they cannot avoid walls or neighbours,
+    # and their margin over 'stationary' is within seed-to-seed noise.)
+    if nets["reactive"] > nets["stationary"]:
+        print(f"OK: an observation-driven policy beats standing still "
+              f"({nets['reactive']:.1f} vs {nets['stationary']:.1f}).")
     else:
-        print(f"OK: '{best_mover}' beats standing still "
-              f"({movers[best_mover]:.1f} vs {nets['stationary']:.1f}), so a gradient toward exploring exists.")
+        print("WARNING: even an observation-driven policy does not beat 'stationary'. Either the")
+        print("         reward leaves no path toward exploring, or the observation is missing")
+        print("         information the policy needs.")
+
+    # Is the boundary penalty learnable? Compare against the blind policy that
+    # flies at the same speed: the gap is what the wall features buy.
+    if "gentle" in aggs and "reactive" in aggs:
+        blind_b = abs(aggs["gentle"]["mean_totals"]["boundary"])
+        obs_b = abs(aggs["reactive"]["mean_totals"]["boundary"])
+        if blind_b > 0:
+            print(f"boundary penalty at equal speed: blind {blind_b:.1f} -> observation-driven {obs_b:.1f} "
+                  f"({(1 - obs_b / blind_b) * 100:.0f}% lower)")
+
+    blind = {n: v for n, v in nets.items() if n in ("gentle", "slow")}
+    losers = [n for n, v in blind.items() if v <= nets["stationary"]]
+    if losers:
+        print(f"note: blind movers {losers} do not beat 'stationary'. Expected: they cannot avoid anything.")
     if nets["stationary"] >= nets["random"]:
         print("note: 'stationary' also beats pure random flight (expected for a crash-prone policy).")
 
@@ -168,7 +203,7 @@ def print_diagnosis(aggs: dict[str, dict]) -> None:
             print(f"WARNING: under '{name}', collision penalties are {pen_share:.0f}% of gross reward "
                   f"magnitude and will dominate the learning signal.")
 
-    print(f"highest net reward: '{best_name}'")
+    print(f"highest net reward: '{max(nets, key=nets.get)}'")
 
 
 def main():
