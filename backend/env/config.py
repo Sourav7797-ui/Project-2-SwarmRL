@@ -49,8 +49,27 @@ class SwarmEnvConfig:
     # Day 7: spawn each drone with a random yaw instead of all facing +x.
     randomize_initial_heading: bool = True
 
+    # --- Dynamics (Day 8). Defaults = the static, windless world. The
+    # curriculum stages switch these on; see backend/reward/curriculum.py. ---
+    # Moving obstacles: each drifts in a fixed random 3-D direction at
+    # `obstacle_speed` and bounces off the world boundary.
+    obstacles_move: bool = False
+    obstacle_speed: float = 0.0          # m/s
+    # Wind: a horizontal drift added to every drone's position each tick. It
+    # does not change the drone's own commanded/actual speed, and the policy
+    # does not observe it directly. Its direction random-walks by
+    # `wind_direction_drift` rad (std) per step.
+    wind_speed: float = 0.0              # m/s
+    wind_direction_drift: float = 0.05
+
     # --- Safety ---
     min_separation: float = 2.0
+    # Day 8: a collision is a NEW reward event only if the drone has been clear
+    # of contact for at least this many ticks. A drone sliding along an obstacle
+    # surface flickers in and out of contact (the push-out leaves it exactly on
+    # the surface), and without a cooldown every flicker was billed again.
+    # 1 reproduces the plain "rising edge" behaviour of Day 6. 10 ticks = 1 s.
+    contact_cooldown_ticks: int = 10
 
     # --- Reward weights ---
     exploration_reward: float = 1.0

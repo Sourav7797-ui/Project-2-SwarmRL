@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+from typing import TYPE_CHECKING
 
 import numpy as np
 from gymnasium.spaces import Box
@@ -10,6 +11,9 @@ from pettingzoo import ParallelEnv
 
 from backend.env.config import SwarmEnvConfig
 from backend.reward.reward_shaping import RewardShaper
+
+if TYPE_CHECKING:
+    from backend.reward.curriculum import CurriculumStage
 
 
 class SwarmEnv(ParallelEnv):
@@ -33,7 +37,8 @@ class SwarmEnv(ParallelEnv):
         #   [3k+4]    body-frame bearing to that wall (0 if none within range)
         #   [3k+5]    altitude, normalised to [-1, 1] (0 = mid-height)
         #   [3k+6]    own pitch (rad)
-        self._obs_dim = self.config.k_nearest * 3 + 7
+        #   [3k+7]    body-frame bearing to the nearest obstacle (0 if none in range)
+        self._obs_dim = self.config.k_nearest * 3 + 8
         self.reward_shaper = RewardShaper(self.config)
         self.reward_logger = None
 
@@ -45,14 +50,20 @@ class SwarmEnv(ParallelEnv):
         self.coverage_grid: np.ndarray | None = None
         self._step_count = 0
 
-        # Day 6: drone-drone collisions are rewarded per EVENT (the tick a
-        # collision starts), not per tick of overlap. This remembers last
-        # tick's collision flags so we can detect the rising edge.
-        self._prev_drone_collisions: np.ndarray | None = None
-        # Same idea for drone-obstacle contact: a drone still pointed at an
-        # obstacle re-penetrates every tick, so charging per tick re-bills
-        # the same contact hundreds of times.
-        self._prev_obstacle_collisions: np.ndarray | None = None
+        # Collisions are rewarded per EVENT, not per tick of overlap (Day 6), and
+        # a new event needs `contact_cooldown_ticks` clear ticks since the last
+        # contact (Day 8), so a drone flickering in and out of contact while
+        # sliding along a surface is billed once. These count the ticks since
+        # each drone was last in contact.
+        self._ticks_since_drone_contact: np.ndarray | None = None
+        self._ticks_since_obstacle_contact: np.ndarray | None = None
+
+        # Day 8: dynamics. Obstacle velocities are all zero in a static world.
+        self.obstacle_velocities: np.ndarray | None = None   # (num_obstacles, 3) m/s
+        self.wind_angle: float = 0.0                         # rad, direction the wind blows toward
+        self._rng: np.random.Generator | None = None         # carried from reset() so wind is seed-reproducible
+        self._pending_stage = None
+        self.stage_name: str | None = None
 
         self._fig = None
         self._ax = None
@@ -69,7 +80,19 @@ class SwarmEnv(ParallelEnv):
             high=np.array([c.max_velocity, c.max_pitch_rate, c.max_yaw_rate], dtype=np.float32),
         )
 
+    def set_stage(self, stage: "CurriculumStage") -> None:
+        """Queue a curriculum stage. It takes effect at the NEXT reset(), never
+        mid-episode: changing the obstacle count under a running episode would
+        corrupt it. Safe to call at any time, including from an RLlib callback
+        on a reused env instance."""
+        self._pending_stage = stage
+
     def reset(self, seed=None, options=None):
+        if self._pending_stage is not None:
+            self.config = self._pending_stage.apply_to(self.config)
+            self.reward_shaper = RewardShaper(self.config)   # reward_logger is kept
+            self.stage_name = self._pending_stage.name
+            self._pending_stage = None
         rng = np.random.default_rng(seed)
         c = self.config
         self.agents = list(self.possible_agents)
@@ -96,10 +119,21 @@ class SwarmEnv(ParallelEnv):
         if c.randomize_initial_heading:
             self.headings[:, 1] = rng.uniform(0.0, 2.0 * np.pi, size=n).astype(np.float32)
 
+        # Day 8 draws come LAST and only when the feature is on, so a static,
+        # windless config consumes exactly the same random stream as before.
+        self.obstacle_velocities = np.zeros((c.num_obstacles, 3), dtype=np.float32)
+        if c.obstacles_move and c.obstacle_speed > 0.0 and c.num_obstacles > 0:
+            direction = rng.normal(size=(c.num_obstacles, 3))
+            direction /= np.linalg.norm(direction, axis=1, keepdims=True)
+            self.obstacle_velocities = (direction * c.obstacle_speed).astype(np.float32)
+        self.wind_angle = float(rng.uniform(0.0, 2.0 * np.pi)) if c.wind_speed > 0.0 else 0.0
+        self._rng = rng
+
         self.coverage_grid = np.zeros(c.voxel_grid_shape, dtype=bool)
         self._mark_coverage()
-        self._prev_drone_collisions = np.zeros(n, dtype=bool)
-        self._prev_obstacle_collisions = np.zeros(n, dtype=bool)
+        # Start "long clear" so the very first contact of an episode counts.
+        self._ticks_since_drone_contact = np.full(n, c.contact_cooldown_ticks, dtype=np.int64)
+        self._ticks_since_obstacle_contact = np.full(n, c.contact_cooldown_ticks, dtype=np.int64)
 
         observations = self._build_observations()
         infos = {agent: {} for agent in self.agents}
@@ -108,6 +142,8 @@ class SwarmEnv(ParallelEnv):
     def step(self, actions: dict[str, np.ndarray]):
         c = self.config
         n = len(self.agents)
+
+        self._advance_obstacles()
 
         target_speed = np.zeros(n, dtype=np.float32)
         for i, agent in enumerate(self.agents):
@@ -134,6 +170,7 @@ class SwarmEnv(ParallelEnv):
             axis=1,
         )
         self.positions += direction * self.speed[:, None] * c.dt
+        self._apply_wind()
         self.positions[:, 0] = np.clip(self.positions[:, 0], 0.0, c.world_size_xy)
         self.positions[:, 1] = np.clip(self.positions[:, 1], 0.0, c.world_size_xy)
         self.positions[:, 2] = np.clip(self.positions[:, 2], 0.0, c.world_height)
@@ -143,10 +180,13 @@ class SwarmEnv(ParallelEnv):
         obstacle_collisions = self._resolve_obstacle_collisions()
         newly_covered = self._mark_coverage()
         drone_collisions = self._detect_collisions()           # state: overlapping now
-        collision_events = drone_collisions & ~self._prev_drone_collisions  # rising edge only
-        self._prev_drone_collisions = drone_collisions
-        obstacle_events = obstacle_collisions & ~self._prev_obstacle_collisions
-        self._prev_obstacle_collisions = obstacle_collisions
+        cooldown = c.contact_cooldown_ticks
+        collision_events = drone_collisions & (self._ticks_since_drone_contact >= cooldown)
+        self._ticks_since_drone_contact = np.where(
+            drone_collisions, 0, np.minimum(self._ticks_since_drone_contact + 1, cooldown))
+        obstacle_events = obstacle_collisions & (self._ticks_since_obstacle_contact >= cooldown)
+        self._ticks_since_obstacle_contact = np.where(
+            obstacle_collisions, 0, np.minimum(self._ticks_since_obstacle_contact + 1, cooldown))
 
         rewards, reward_breakdown = self.reward_shaper.compute_with_breakdown(
             newly_covered_by_agent=newly_covered,
@@ -181,6 +221,34 @@ class SwarmEnv(ParallelEnv):
             self.agents = []
 
         return observations, rewards, terminations, truncations, infos
+
+    def _advance_obstacles(self) -> None:
+        """Move each obstacle along its fixed velocity and bounce it off the
+        world boundary (reflect the position and flip that velocity component)."""
+        c = self.config
+        if not (c.obstacles_move and c.obstacle_speed > 0.0) or len(self.obstacles) == 0:
+            return
+        world_max = np.array([c.world_size_xy, c.world_size_xy, c.world_height], dtype=np.float32)
+        moved = self.obstacles + self.obstacle_velocities * c.dt
+        below = moved < 0.0
+        above = moved > world_max
+        moved = np.where(below, -moved, moved)
+        moved = np.where(above, 2.0 * world_max - moved, moved)
+        self.obstacle_velocities = np.where(below | above, -self.obstacle_velocities, self.obstacle_velocities)
+        self.obstacles = moved.astype(np.float32)
+        self.obstacle_velocities = self.obstacle_velocities.astype(np.float32)
+
+    def _apply_wind(self) -> None:
+        """Horizontal wind drift on every drone. It displaces the drone but does
+        not touch self.speed (the drone's own speed through the air)."""
+        c = self.config
+        if c.wind_speed <= 0.0:
+            return
+        self.wind_angle += float(self._rng.normal(0.0, c.wind_direction_drift))
+        wind_velocity = c.wind_speed * np.array(
+            [np.cos(self.wind_angle), np.sin(self.wind_angle), 0.0]
+        )
+        self.positions += (wind_velocity * c.dt).astype(np.float32)
 
     def _mark_coverage(self) -> np.ndarray:
         c = self.config
@@ -283,13 +351,19 @@ class SwarmEnv(ParallelEnv):
         neighbor_feats = np.stack([gathered_dists, bearing_xy, bearing_z], axis=-1)
         neighbor_feats = neighbor_feats.reshape(n, k * 3).astype(np.float32)
 
-        # ---- Nearest obstacle distance ----
+        # ---- Nearest obstacle: distance + BODY-frame bearing ----
         if len(self.obstacles) > 0:
-            obs_diffs = pos[:, None, :] - self.obstacles[None, :, :]
-            obs_dists = np.linalg.norm(obs_diffs, axis=-1)
-            nearest_obstacle = np.minimum(obs_dists.min(axis=1), c.lidar_range)
+            to_obstacles = self.obstacles[None, :, :] - pos[:, None, :]   # FROM drone TO obstacle
+            obs_dists = np.linalg.norm(to_obstacles, axis=-1)
+            nearest_obs = np.argmin(obs_dists, axis=1)
+            nearest_obs_dist = obs_dists[np.arange(n), nearest_obs]
+            nearest_obstacle = np.minimum(nearest_obs_dist, c.lidar_range)
+            to_nearest = to_obstacles[np.arange(n), nearest_obs]
+            obstacle_bearing = self._wrap_angle(np.arctan2(to_nearest[:, 1], to_nearest[:, 0]) - yaw)
+            obstacle_bearing = np.where(nearest_obs_dist < c.lidar_range, obstacle_bearing, 0.0)
         else:
             nearest_obstacle = np.full(n, c.lidar_range, dtype=np.float32)
+            obstacle_bearing = np.zeros(n, dtype=np.float32)
 
         # ---- Coverage ahead ----
         # Fraction of explored voxels in the 3x3x3 block centred
@@ -344,6 +418,7 @@ class SwarmEnv(ParallelEnv):
                 wall_bearing[:, None],
                 altitude_norm[:, None],
                 pitch[:, None],
+                obstacle_bearing[:, None],
             ],
             axis=1,
         ).astype(np.float32)

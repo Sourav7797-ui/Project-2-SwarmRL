@@ -1,28 +1,3 @@
-"""Curriculum stages and promotion logic (Task 2, Day 7).
-
-Architecture doc, section 2.3: task difficulty ramps up, static world ->
-dynamic obstacles -> wind, controlled by a curriculum callback. This module
-is the pure-logic half of that: WHAT the stages are and WHEN to promote.
-
-  * It never touches the environment's physics. Day 8 wires the stage
-    parameters (moving obstacles, wind) into SwarmEnv.
-  * It never imports Ray. Task 3's RLlib callback will call
-    CurriculumManager.record_episode() at the end of each episode.
-
-Promotion rule: over the most recent `window_size` episodes of the CURRENT
-stage, mean final coverage must reach the stage's `min_coverage_pct` AND the
-pooled collision rate must stay at or below `max_collisions_per_1k`. The
-window is cleared on promotion so evidence from an easier stage never counts
-toward the next one. There is no demotion.
-
-IMPORTANT: the default thresholds are PROVISIONAL. They cannot be calibrated
-until a trained policy exists. Reference points from the scripted baselines in
-scripts/analyze_reward_distribution.py (50 agents, 1000 steps):
-    observation-driven 'reactive' policy: ~12% coverage, ~0.27 collisions / 1k agent-steps
-    random policy:                        ~13% coverage, ~0.9  collisions / 1k agent-steps
-The defaults below ask for roughly twice the scripted coverage. Recalibrate
-them from the Phase 1 training runs in Task 3.
-"""
 from __future__ import annotations
 
 import dataclasses
@@ -66,7 +41,13 @@ class CurriculumStage:
     def apply_to(self, config: SwarmEnvConfig) -> SwarmEnvConfig:
         """A copy of `config` with this stage's environment settings applied.
         The input config is frozen and is not modified."""
-        return dataclasses.replace(config, num_obstacles=self.num_obstacles)
+        return dataclasses.replace(
+            config,
+            num_obstacles=self.num_obstacles,
+            obstacles_move=self.obstacles_move,
+            obstacle_speed=self.obstacle_speed,
+            wind_speed=self.wind_speed,
+        )
 
 
 STAGE_STATIC = CurriculumStage(

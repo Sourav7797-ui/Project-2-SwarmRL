@@ -27,6 +27,7 @@ import numpy as np
 
 from backend.env.config import SwarmEnvConfig
 from backend.env.swarm_env import SwarmEnv
+from backend.reward.curriculum import DEFAULT_STAGES
 from backend.reward.reward_logger import RewardComponentLogger
 from backend.reward.reward_shaping import ALL_COMPONENTS
 
@@ -64,19 +65,24 @@ def _make_wander_policy(speed: float):
 
 def reactive_policy(env, agents, rng, obs):
     """Uses ONLY the observation vector (no privileged state): steer away from
-    a nearby wall or neighbour, level out toward mid-height, and turn away when
+    a nearby wall, obstacle or neighbour, level out toward mid-height, and turn away when
     the area ahead is already explored. Same 3 m/s as 'gentle', so any
     difference between the two is down to what the observation lets it do."""
     c = env.config
     k = c.k_nearest
     i_cov, i_wd, i_wb, i_alt, i_pitch = 3 * k + 1, 3 * k + 3, 3 * k + 4, 3 * k + 5, 3 * k + 6
+    i_od, i_ob = 3 * k, 3 * k + 7                 # nearest-obstacle distance and body-frame bearing
     out = {}
     for a in agents:
         o = obs[a]
         yaw_rate = 0.0
         wall_dist, wall_bearing = o[i_wd], o[i_wb]
         nb_dist, nb_bearing = o[0], o[1]          # nearest neighbour
-        if wall_dist < 12.0 and abs(wall_bearing) < np.pi / 2:
+        # Priority matters: an imminent obstacle outranks the wall rule. With the wall
+        # rule first, drones skimming a wall flew straight into obstacles beside it.
+        if o[i_od] < 8.0 and abs(o[i_ob]) < np.pi / 2:
+            yaw_rate = -(np.sign(o[i_ob]) or 1.0) * c.max_yaw_rate          # obstacle ahead: turn away
+        elif wall_dist < 12.0 and abs(wall_bearing) < np.pi / 2:
             yaw_rate = -(np.sign(wall_bearing) or 1.0) * c.max_yaw_rate     # wall ahead: turn away
         elif nb_dist < 8.0 and abs(nb_bearing) < np.pi / 2:
             yaw_rate = -(np.sign(nb_bearing) or 1.0) * c.max_yaw_rate       # neighbour ahead: turn away
@@ -170,7 +176,9 @@ def print_diagnosis(aggs: dict[str, dict]) -> None:
     # exploring AND that the observation carries enough information to act on it.
     # (Blind movers are not the right test: they cannot avoid walls or neighbours,
     # and their margin over 'stationary' is within seed-to-seed noise.)
-    if nets["reactive"] > nets["stationary"]:
+    if "reactive" not in nets or "stationary" not in nets:
+        print("(skipped: run both 'reactive' and 'stationary' to get the pass/fail check)")
+    elif nets["reactive"] > nets["stationary"]:
         print(f"OK: an observation-driven policy beats standing still "
               f"({nets['reactive']:.1f} vs {nets['stationary']:.1f}).")
     else:
@@ -191,7 +199,7 @@ def print_diagnosis(aggs: dict[str, dict]) -> None:
     losers = [n for n, v in blind.items() if v <= nets["stationary"]]
     if losers:
         print(f"note: blind movers {losers} do not beat 'stationary'. Expected: they cannot avoid anything.")
-    if nets["stationary"] >= nets["random"]:
+    if "stationary" in nets and "random" in nets and nets["stationary"] >= nets["random"]:
         print("note: 'stationary' also beats pure random flight (expected for a crash-prone policy).")
 
     for name, a in aggs.items():
@@ -212,9 +220,18 @@ def main():
     parser.add_argument("--agents", type=int, default=50)
     parser.add_argument("--steps", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--stage", default="none", choices=["none"] + [st.name for st in DEFAULT_STAGES],
+                        help="apply a curriculum stage (obstacle count, moving obstacles, wind)")
+    parser.add_argument("--policies", default=",".join(POLICIES),
+                        help="comma-separated subset of: " + ", ".join(POLICIES))
     args = parser.parse_args()
 
     config = SwarmEnvConfig(num_agents=args.agents, max_episode_steps=args.steps)
+    if args.stage != "none":
+        stage = next(st for st in DEFAULT_STAGES if st.name == args.stage)
+        config = stage.apply_to(config)
+    print(f"stage: {args.stage}   obstacles={config.num_obstacles}  moving={config.obstacles_move}  "
+          f"obstacle_speed={config.obstacle_speed}  wind_speed={config.wind_speed}")
     print(f"reward weights: exploration={config.exploration_reward}, "
           f"collision={config.collision_penalty}, obstacle={config.obstacle_collision_penalty}, "
           f"boundary_scale={config.boundary_penalty_scale}, "
@@ -222,7 +239,12 @@ def main():
     print(f"{args.episodes} episodes x {args.steps} steps x {args.agents} agents per policy")
 
     aggs = {}
-    for name, policy_fn in POLICIES.items():
+    chosen = [n.strip() for n in args.policies.split(",") if n.strip()]
+    unknown = [n for n in chosen if n not in POLICIES]
+    if unknown:
+        parser.error(f"unknown policies {unknown}; choose from {list(POLICIES)}")
+    for name in chosen:
+        policy_fn = POLICIES[name]
         results = [run_episode(config, policy_fn, seed=args.seed + i) for i in range(args.episodes)]
         aggs[name] = aggregate(results)
         print_policy_report(name, aggs[name])
