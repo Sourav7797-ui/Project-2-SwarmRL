@@ -49,6 +49,10 @@ class SwarmEnv(ParallelEnv):
         self.obstacles: np.ndarray | None = None
         self.coverage_grid: np.ndarray | None = None
         self._step_count = 0
+        # Day 11: cached voxel coordinates for sensor-based coverage.
+        self._coverage_cache_key = None
+        self._coverage_grid_indices = None
+        self._coverage_voxel_centers = None
 
         # Collisions are rewarded per EVENT, not per tick of overlap (Day 6), and
         # a new event needs `contact_cooldown_ticks` clear ticks since the last
@@ -250,19 +254,108 @@ class SwarmEnv(ParallelEnv):
         )
         self.positions += (wind_velocity * c.dt).astype(np.float32)
 
-    def _mark_coverage(self) -> np.ndarray:
-        c = self.config
-        idx = (self.positions // c.voxel_size).astype(int)
-        idx[:, 0] = np.clip(idx[:, 0], 0, self.coverage_grid.shape[0] - 1)
-        idx[:, 1] = np.clip(idx[:, 1], 0, self.coverage_grid.shape[1] - 1)
-        idx[:, 2] = np.clip(idx[:, 2], 0, self.coverage_grid.shape[2] - 1)
 
-        newly_covered = np.zeros(len(self.positions), dtype=bool)
-        for i, (x, y, z) in enumerate(idx):
-            if not self.coverage_grid[x, y, z]:
-                self.coverage_grid[x, y, z] = True
+    
+    def _mark_coverage(self) -> np.ndarray:
+        """Mark voxels observed by each drone's mapping sensor.
+
+        Uses a spherical range limit and forward-facing horizontal and
+        vertical fields of view. Obstacle occlusion is not modeled.
+
+        Returns a Boolean array of shape (num_agents,). Each element is
+        True if that agent observed at least one previously uncovered voxel.
+        """
+        c = self.config
+        n = len(self.positions)
+        newly_covered = np.zeros(n, dtype=bool)
+
+        sensor_range = c.mapping_sensor_range
+        voxel_size = c.voxel_size
+
+        if sensor_range <= 0.0 or voxel_size <= 0.0:
+            return newly_covered
+
+        grid_shape = np.asarray(self.coverage_grid.shape)
+        half_h_fov = np.deg2rad(c.mapping_horizontal_fov_deg / 2.0)
+        half_v_fov = np.deg2rad(c.mapping_vertical_fov_deg / 2.0)
+
+        pitch = self.headings[:, 0]
+        yaw = self.headings[:, 1]
+
+        # Inspect only the local 3D grid slice around each drone.
+        # This avoids scanning the full grid-index cache for every agent.
+        for i in range(n):
+            pos = self.positions[i]
+
+            lower = np.maximum(
+                np.floor((pos - sensor_range) / voxel_size).astype(int),
+                0,
+            )
+            upper = np.minimum(
+                np.floor((pos + sensor_range) / voxel_size).astype(int) + 1,
+                grid_shape,
+            )
+
+            if np.any(lower >= upper):
+                continue
+
+            x0, y0, z0 = lower
+            x1, y1, z1 = upper
+
+            local_grid = self.coverage_grid[x0:x1, y0:y1, z0:z1]
+            local_shape = local_grid.shape
+
+            # Generate coordinates only for this local bounding box.
+            local_indices = np.indices(local_shape).reshape(3, -1).T
+            local_indices += lower
+
+            voxel_centers = (local_indices.astype(np.float32) + 0.5) * voxel_size
+            offsets = voxel_centers - pos
+            distances = np.linalg.norm(offsets, axis=1)
+
+            in_range = (distances <= sensor_range) & (distances > 0.0)
+            if not np.any(in_range):
+                continue
+
+            xyz = local_indices[in_range]
+            vectors = offsets[in_range]
+
+            horizontal_dist = np.linalg.norm(vectors[:, :2], axis=1)
+            world_yaw = np.arctan2(vectors[:, 1], vectors[:, 0])
+            yaw_delta = self._wrap_angle(world_yaw - yaw[i])
+
+            world_pitch = np.arctan2(
+                vectors[:, 2],
+                horizontal_dist + 1e-8,
+            )
+            pitch_delta = world_pitch - pitch[i]
+
+            visible = (
+                (np.abs(yaw_delta) <= half_h_fov)
+                & (np.abs(pitch_delta) <= half_v_fov)
+            )
+            visible_xyz = xyz[visible]
+
+            if visible_xyz.size == 0:
+                continue
+
+            previously_uncovered = ~self.coverage_grid[
+                visible_xyz[:, 0],
+                visible_xyz[:, 1],
+                visible_xyz[:, 2],
+            ]
+
+            if np.any(previously_uncovered):
                 newly_covered[i] = True
+                newly_xyz = visible_xyz[previously_uncovered]
+                self.coverage_grid[
+                    newly_xyz[:, 0],
+                    newly_xyz[:, 1],
+                    newly_xyz[:, 2],
+                ] = True
+
         return newly_covered
+
 
     def _detect_collisions(self) -> np.ndarray:
         diffs = self.positions[:, None, :] - self.positions[None, :, :]
