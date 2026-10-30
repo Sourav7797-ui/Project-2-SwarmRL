@@ -44,6 +44,12 @@ class SwarmEnvConfig:
     # is always already marked. (The old feature read the own voxel and was
     # therefore constant 1.0.)
     coverage_lookahead: float = 8.0
+    
+    # --- Mapping sensor (Day 11) ---
+    mapping_sensor_range: float = 16.0
+    mapping_horizontal_fov_deg: float = 120.0
+    mapping_vertical_fov_deg: float = 90.0
+
 
     # --- Reset ---
     # Day 7: spawn each drone with a random yaw instead of all facing +x.
