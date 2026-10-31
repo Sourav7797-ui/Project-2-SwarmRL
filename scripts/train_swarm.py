@@ -11,6 +11,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from backend.training.ppo_config import build_ppo_config
+
 ROOT = Path(__file__).resolve().parent.parent
 
 if str(ROOT) not in sys.path:
@@ -56,6 +58,19 @@ def main():
         default="static_world",
     )
     parser.add_argument("--reward-scale", type=float, default=0.05)
+    parser.add_argument(
+        "--exploration-reward-mode",
+        choices=["binary", "voxel_log"],
+        default="binary",
+        help="Exploration reward calculation mode",
+    )
+
+    parser.add_argument(
+        "--exploration-voxel-reference",
+        type=float,
+        default=5.0,
+        help="Reference voxel count for voxel_log reward mode",
+    )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--checkpoint-every", type=int, default=1)
 
@@ -87,6 +102,9 @@ def main():
 
     if args.reward_scale <= 0:
         parser.error("reward-scale must be positive")
+
+    if args.exploration_voxel_reference <= 0:
+        parser.error("exploration-voxel-reference must be positive")
 
     if not args.log_file.lower().endswith(".csv"):
         parser.error("--log-file must end in .csv")
@@ -143,6 +161,10 @@ def main():
             max_episode_steps=args.steps,
             stage=args.stage,
             reward_scale=args.reward_scale,
+            env_overrides={
+                "exploration_reward_mode": args.exploration_reward_mode,
+                "exploration_voxel_reference": args.exploration_voxel_reference,
+            },
             num_env_runners=args.workers,
             train_batch_size=args.steps,
             minibatch_size=min(args.steps, 32),
