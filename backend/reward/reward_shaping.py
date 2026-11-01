@@ -3,6 +3,9 @@
 
 Day 15 adds an optional logarithmic voxel-discovery reward.
 The default binary mode preserves the original reward behaviour.
+
+Day 16 adds an optional soft drone-to-drone separation reward.
+The feature is disabled by default.
 """
 from __future__ import annotations
 
@@ -10,18 +13,28 @@ import numpy as np
 
 from backend.env.config import SwarmEnvConfig
 
+
 COMPONENT_EXPLORATION = "exploration"
 COMPONENT_DRONE_COLLISION = "drone_collision"
 COMPONENT_OBSTACLE_COLLISION = "obstacle_collision"
 COMPONENT_BOUNDARY = "boundary"
 COMPONENT_TEAM_BONUS = "team_bonus"
+COMPONENT_SEPARATION = "separation"
 
+
+# Original component contract: preserve its names and order.
 ALL_COMPONENTS = (
     COMPONENT_EXPLORATION,
     COMPONENT_DRONE_COLLISION,
     COMPONENT_OBSTACLE_COLLISION,
     COMPONENT_BOUNDARY,
     COMPONENT_TEAM_BONUS,
+)
+
+# Extended component list for Day 16 monitoring.
+ALL_COMPONENTS_WITH_SEPARATION = (
+    *ALL_COMPONENTS,
+    COMPONENT_SEPARATION,
 )
 
 
@@ -65,9 +78,10 @@ class RewardShaper:
         c = self.config
         n = len(positions)
 
-        # Day 15: configurable exploration reward.
+        # --------------------------------------------------
+        # Day 15: configurable exploration reward
+        # --------------------------------------------------
         if c.exploration_reward_mode == "binary":
-            # Original behaviour: one reward per agent discovering anything.
             exploration = (
                 newly_covered_by_agent.astype(np.float32)
                 * c.exploration_reward
@@ -81,7 +95,8 @@ class RewardShaper:
                 )
 
             counts = np.asarray(
-                new_voxel_counts_by_agent, dtype=np.float32
+                new_voxel_counts_by_agent,
+                dtype=np.float32,
             )
 
             if counts.shape != (n,):
@@ -119,39 +134,135 @@ class RewardShaper:
                 f"{c.exploration_reward_mode!r}"
             )
 
+        # --------------------------------------------------
+        # Existing drone collision penalty
+        # --------------------------------------------------
         drone_collision = (
             collisions_by_agent.astype(np.float32)
             * c.collision_penalty
         )
 
+        # --------------------------------------------------
+        # Existing obstacle collision penalty
+        # --------------------------------------------------
         if obstacle_collisions_by_agent is not None:
             obstacle_collision = (
                 obstacle_collisions_by_agent.astype(np.float32)
                 * c.obstacle_collision_penalty
             )
         else:
-            obstacle_collision = np.zeros(n, dtype=np.float32)
+            obstacle_collision = np.zeros(
+                n,
+                dtype=np.float32,
+            )
 
+        # --------------------------------------------------
+        # Existing boundary penalty
+        # --------------------------------------------------
         boundary = self._boundary_penalty(
-            positions, world_size_xy, world_height
+            positions,
+            world_size_xy,
+            world_height,
         )
 
-        # Preserve the original team bonus semantics.
+        # --------------------------------------------------
+        # Day 16: optional soft drone separation penalty
+        # --------------------------------------------------
+        separation = np.zeros(
+            n,
+            dtype=np.float32,
+        )
+
+        if c.separation_reward_enabled and n > 1:
+            preferred = float(c.preferred_separation)
+            hard_limit = float(c.min_separation)
+
+            if (
+                not np.isfinite(preferred)
+                or preferred <= hard_limit
+            ):
+                raise ValueError(
+                    "preferred_separation must be greater than "
+                    "min_separation"
+                )
+
+            if not np.isfinite(c.separation_penalty_scale):
+                raise ValueError(
+                    "separation_penalty_scale must be finite"
+                )
+
+            if c.separation_penalty_scale > 0:
+                raise ValueError(
+                    "separation_penalty_scale must be zero or negative"
+                )
+
+            # Calculate distances between every pair of drones.
+            differences = (
+                positions[:, np.newaxis, :]
+                - positions[np.newaxis, :, :]
+            )
+
+            distances = np.linalg.norm(
+                differences,
+                axis=2,
+            )
+
+            # Ignore each drone's distance from itself.
+            np.fill_diagonal(distances, np.inf)
+
+            # Find each drone's nearest neighbour.
+            nearest_distances = np.min(
+                distances,
+                axis=1,
+            )
+
+            # Penalize only when distance is below preferred.
+            separation_deficit = np.clip(
+                preferred - nearest_distances,
+                0.0,
+                None,
+            )
+
+            normalized_deficit = (
+                separation_deficit
+                / (preferred - hard_limit)
+            )
+
+            separation = (
+                c.separation_penalty_scale
+                * np.square(normalized_deficit)
+            ).astype(np.float32)
+
+        # --------------------------------------------------
+        # Existing team coverage bonus
+        # --------------------------------------------------
         team_bonus_value = (
             float(newly_covered_by_agent.sum())
             / max(n, 1)
             * c.team_coverage_bonus_scale
         )
-        team_bonus = np.full(n, team_bonus_value, dtype=np.float32)
 
+        team_bonus = np.full(
+            n,
+            team_bonus_value,
+            dtype=np.float32,
+        )
+
+        # --------------------------------------------------
+        # Calculate total reward
+        # --------------------------------------------------
         total = (
             exploration
             + drone_collision
             + obstacle_collision
             + boundary
             + team_bonus
+            + separation
         )
 
+        # --------------------------------------------------
+        # Preserve original breakdown contract by default
+        # --------------------------------------------------
         breakdown = {
             COMPONENT_EXPLORATION: exploration,
             COMPONENT_DRONE_COLLISION: drone_collision,
@@ -159,6 +270,10 @@ class RewardShaper:
             COMPONENT_BOUNDARY: boundary,
             COMPONENT_TEAM_BONUS: team_bonus,
         }
+
+        # Add the sixth component only when Day 16 is enabled.
+        if c.separation_reward_enabled:
+            breakdown[COMPONENT_SEPARATION] = separation
 
         rewards = {
             f"drone_{i}": float(total[i])
@@ -174,6 +289,7 @@ class RewardShaper:
         world_height: float,
     ) -> np.ndarray:
         c = self.config
+
         x, y, z = (
             positions[:, 0],
             positions[:, 1],
@@ -182,11 +298,17 @@ class RewardShaper:
 
         def edge_violation(v, lo, hi):
             under = np.clip(
-                lo + c.boundary_margin - v, 0, None
+                lo + c.boundary_margin - v,
+                0,
+                None,
             )
+
             over = np.clip(
-                v - (hi - c.boundary_margin), 0, None
+                v - (hi - c.boundary_margin),
+                0,
+                None,
             )
+
             return under + over
 
         violation = (

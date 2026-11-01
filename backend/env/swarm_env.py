@@ -199,6 +199,7 @@ class SwarmEnv(ParallelEnv):
             world_size_xy=c.world_size_xy,
             world_height=c.world_height,
             obstacle_collisions_by_agent=obstacle_events,
+            new_voxel_counts_by_agent=self._last_new_voxel_counts,
         )
         if self.reward_logger is not None:
             self.reward_logger.log_step(reward_breakdown)
@@ -267,7 +268,12 @@ class SwarmEnv(ParallelEnv):
         """
         c = self.config
         n = len(self.positions)
+
+# Boolean signal retained for backward compatibility.
         newly_covered = np.zeros(n, dtype=bool)
+
+# Number of previously unexplored voxels discovered by each drone.
+        self._last_new_voxel_counts = np.zeros(n, dtype=np.int32)
 
         sensor_range = c.mapping_sensor_range
         voxel_size = c.voxel_size
@@ -347,12 +353,17 @@ class SwarmEnv(ParallelEnv):
 
             if np.any(previously_uncovered):
                 newly_covered[i] = True
-                newly_xyz = visible_xyz[previously_uncovered]
-                self.coverage_grid[
+
+    
+                self._last_new_voxel_counts[i] = int(np.count_nonzero(previously_uncovered)
+    )
+
+            newly_xyz = visible_xyz[previously_uncovered]
+            self.coverage_grid[
                     newly_xyz[:, 0],
                     newly_xyz[:, 1],
                     newly_xyz[:, 2],
-                ] = True
+                    ] = True
 
         return newly_covered
 
