@@ -1,4 +1,4 @@
-"""Central configuration for the SwarmRL environment."""
+﻿"""Central configuration for the SwarmRL environment."""
 from dataclasses import dataclass
 
 
@@ -69,7 +69,15 @@ class SwarmEnvConfig:
     wind_direction_drift: float = 0.05
 
     # --- Safety ---
+   # --- Safety ---
     min_separation: float = 2.0
+
+    # Day 16: soft drone-to-drone separation reward.
+    # Hard collision distance remains 2.0 m.
+    # The soft penalty encourages drones to maintain 4.0 m separation.
+    separation_reward_enabled: bool = False
+    preferred_separation: float = 4.0
+    separation_penalty_scale: float = -1.0
     # Day 8: a collision is a NEW reward event only if the drone has been clear
     # of contact for at least this many ticks. A drone sliding along an obstacle
     # surface flickers in and out of contact (the push-out leaves it exactly on
@@ -79,6 +87,12 @@ class SwarmEnvConfig:
 
     # --- Reward weights ---
     exploration_reward: float = 1.0
+    # Exploration reward mode: "binary" preserves the original behaviour;
+# "voxel_log" rewards the number of newly discovered voxels.
+    exploration_reward_mode: str = "binary"
+
+# Reference number of newly discovered voxels for logarithmic scaling.
+    exploration_voxel_reference: float = 5.0
     collision_penalty: float = -100.0
     obstacle_collision_penalty: float = -75.0
     boundary_margin: float = 5.0
@@ -88,7 +102,12 @@ class SwarmEnvConfig:
     # penalty "small", so it is now small relative to exploration.
     boundary_penalty_scale: float = -0.01
     team_coverage_bonus_scale: float = 0.05
-
+        # Day 15 and Day 16 configuration
+    exploration_reward_mode: str = "binary"
+    exploration_voxel_reference: float = 5.0
+    separation_reward_enabled: bool = False
+    preferred_separation: float = 4.0
+    separation_penalty_scale: float = -1.0
     @property
     def voxel_grid_shape(self) -> tuple[int, int, int]:
         nx = int(self.world_size_xy // self.voxel_size)
