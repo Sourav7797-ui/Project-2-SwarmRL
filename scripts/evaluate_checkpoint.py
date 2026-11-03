@@ -598,6 +598,60 @@ def main() -> int:
                 f"expected {args.exploration_voxel_reference}, "
                 f"got {actual_reference!r}."
             )
+                # Verify restored Day 16 separation configuration.
+        actual_separation_enabled = effective_env_config.get(
+            "separation_reward_enabled"
+        )
+        actual_preferred_separation = effective_env_config.get(
+            "preferred_separation"
+        )
+        actual_separation_scale = effective_env_config.get(
+            "separation_penalty_scale"
+        )
+
+        if actual_separation_enabled != args.separation_reward_enabled:
+            raise RuntimeError(
+                "Restored algorithm separation-enabled mismatch: "
+                f"expected {args.separation_reward_enabled!r}, "
+                f"got {actual_separation_enabled!r}."
+            )
+
+        if (
+            actual_preferred_separation is None
+            or not math.isclose(
+                float(actual_preferred_separation),
+                args.preferred_separation,
+                rel_tol=1e-9,
+                abs_tol=1e-12,
+            )
+        ):
+            raise RuntimeError(
+                "Restored algorithm preferred-separation mismatch: "
+                f"expected {args.preferred_separation}, "
+                f"got {actual_preferred_separation!r}."
+            )
+
+        if (
+            actual_separation_scale is None
+            or not math.isclose(
+                float(actual_separation_scale),
+                args.separation_penalty_scale,
+                rel_tol=1e-9,
+                abs_tol=1e-12,
+            )
+        ):
+            raise RuntimeError(
+                "Restored algorithm separation-penalty-scale mismatch: "
+                f"expected {args.separation_penalty_scale}, "
+                f"got {actual_separation_scale!r}."
+            )
+
+        print(
+            "Restored separation configuration verified: "
+            f"enabled={actual_separation_enabled}, "
+            f"preferred={actual_preferred_separation} m, "
+            f"scale={actual_separation_scale}"
+        )
 
         # -------------------------------------------------
         # Obtain restored RLModule

@@ -1,5 +1,5 @@
 
-"""Day 10: Conservative, resumable PPO training for SwarmRL."""
+"""Day 16: PPO fine-tuning with optional separation reward and checkpoint weights."""
 
 from __future__ import annotations
 
@@ -11,12 +11,12 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from backend.training.ppo_config import build_ppo_config
-
 ROOT = Path(__file__).resolve().parent.parent
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+from backend.training.ppo_config import build_ppo_config
 
 
 def flatten_metrics(data, prefix=""):
@@ -34,7 +34,7 @@ def flatten_metrics(data, prefix=""):
 
 
 def finite_metric(metrics, *keys):
-    """Return the first finite numeric metric found under the supplied keys."""
+    """Return the first finite numeric metric found under supplied keys."""
     for key in keys:
         value = metrics.get(key)
         if isinstance(value, (int, float)) and math.isfinite(value):
@@ -58,19 +58,34 @@ def main():
         default="static_world",
     )
     parser.add_argument("--reward-scale", type=float, default=0.05)
+
     parser.add_argument(
         "--exploration-reward-mode",
         choices=["binary", "voxel_log"],
         default="binary",
-        help="Exploration reward calculation mode",
     )
-
     parser.add_argument(
         "--exploration-voxel-reference",
         type=float,
         default=5.0,
-        help="Reference voxel count for voxel_log reward mode",
     )
+
+    parser.add_argument(
+        "--separation-reward-enabled",
+        action="store_true",
+        help="Enable soft inter-drone separation reward shaping",
+    )
+    parser.add_argument(
+        "--preferred-separation",
+        type=float,
+        default=4.0,
+    )
+    parser.add_argument(
+        "--separation-penalty-scale",
+        type=float,
+        default=-1.0,
+    )
+
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--checkpoint-every", type=int, default=1)
 
@@ -81,12 +96,14 @@ def main():
     parser.add_argument(
         "--log-file",
         default="progress.csv",
-        help="CSV filename stored inside checkpoint-dir",
     )
     parser.add_argument(
         "--resume",
         default=None,
-        help="Path to an existing RLlib checkpoint directory",
+        help=(
+            "Existing RLlib checkpoint. Restores learner weights only; "
+            "the new algorithm uses the requested environment settings."
+        ),
     )
 
     args = parser.parse_args()
@@ -100,14 +117,46 @@ def main():
     if args.checkpoint_every < 1:
         parser.error("checkpoint-every must be positive")
 
-    if args.reward_scale <= 0:
-        parser.error("reward-scale must be positive")
+    if not math.isfinite(args.reward_scale) or args.reward_scale <= 0:
+        parser.error("reward-scale must be finite and positive")
 
-    if args.exploration_voxel_reference <= 0:
-        parser.error("exploration-voxel-reference must be positive")
+    if (
+        not math.isfinite(args.exploration_voxel_reference)
+        or args.exploration_voxel_reference <= 0
+    ):
+        parser.error("exploration-voxel-reference must be finite and positive")
+
+    if (
+        not math.isfinite(args.preferred_separation)
+        or args.preferred_separation <= 2.0
+    ):
+        parser.error("preferred-separation must be finite and greater than 2.0m")
+
+    if (
+        not math.isfinite(args.separation_penalty_scale)
+        or args.separation_penalty_scale > 0
+    ):
+        parser.error("separation-penalty-scale must be finite and <= 0")
 
     if not args.log_file.lower().endswith(".csv"):
         parser.error("--log-file must end in .csv")
+
+    resume_path = None
+    learner_checkpoint_path = None
+
+    if args.resume:
+        resume_path = Path(args.resume).resolve()
+
+        if not resume_path.is_dir():
+            parser.error(f"Resume checkpoint directory not found: {resume_path}")
+
+        learner_checkpoint_path = resume_path / "learner_group"
+
+        if not learner_checkpoint_path.is_dir():
+            parser.error(
+                "The supplied checkpoint does not contain a learner_group "
+                f"directory: {learner_checkpoint_path}"
+            )
 
     from backend.training.ray_runtime import (
         InsufficientMemoryError,
@@ -119,19 +168,28 @@ def main():
     configure_environment()
 
     import ray
-    from backend.training.ppo_config import build_ppo_config
 
     output_dir = ROOT / args.checkpoint_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
     log_path = output_dir / args.log_file
 
-    print(f"SwarmRL Day 10 | Ray {ray.__version__}")
+    print(f"SwarmRL Day 16 | Ray {ray.__version__}")
     print(
         f"Agents={args.agents}, episode steps={args.steps}, "
         f"iterations={args.iterations}, workers={args.workers}, "
         f"stage={args.stage}"
     )
+    print(
+        "Requested separation configuration: "
+        f"enabled={args.separation_reward_enabled}, "
+        f"preferred={args.preferred_separation}m, "
+        f"scale={args.separation_penalty_scale}"
+    )
+
+    if resume_path is not None:
+        print(f"Initial learner checkpoint: {resume_path}")
+        print("Restore mode: learner weights only; fresh optimizer and iteration.")
 
     free_gb = available_memory_gb()
 
@@ -156,6 +214,7 @@ def main():
     algo = None
 
     try:
+        # Always build a fresh algorithm using the requested environment config.
         config = build_ppo_config(
             num_agents=args.agents,
             max_episode_steps=args.steps,
@@ -163,7 +222,12 @@ def main():
             reward_scale=args.reward_scale,
             env_overrides={
                 "exploration_reward_mode": args.exploration_reward_mode,
-                "exploration_voxel_reference": args.exploration_voxel_reference,
+                "exploration_voxel_reference": (
+                    args.exploration_voxel_reference
+                ),
+                "separation_reward_enabled": args.separation_reward_enabled,
+                "preferred_separation": args.preferred_separation,
+                "separation_penalty_scale": args.separation_penalty_scale,
             },
             num_env_runners=args.workers,
             train_batch_size=args.steps,
@@ -173,20 +237,82 @@ def main():
             seed=args.seed,
         )
 
-        start_build = time.time()
         algo = config.build_algo()
-        print(f"Algorithm built in {time.time() - start_build:.1f}s")
+        print("Fresh PPO algorithm built with requested environment settings.")
 
-        if args.resume:
-            checkpoint_path = Path(args.resume).resolve()
+        # Restore only the trained learner component from the older checkpoint.
+        if learner_checkpoint_path is not None:
+            print("\nRestoring Day 13 learner state...")
 
-            if not checkpoint_path.is_dir():
-                raise FileNotFoundError(
-                    f"Checkpoint directory does not exist: {checkpoint_path}"
+            algo.learner_group.restore_from_path(
+                learner_checkpoint_path
+            )
+
+            # Confirm that the restored learner contains module weights.
+            learner_weights = algo.learner_group.get_weights()
+
+            if not learner_weights:
+                raise RuntimeError(
+                    "Learner restore completed, but get_weights() returned "
+                    "an empty state. Refusing to start training."
                 )
 
-            algo.restore_from_path(str(checkpoint_path))
-            print(f"Restored checkpoint: {checkpoint_path}")
+            print(
+                "Learner weights restored. Module IDs: "
+                f"{list(learner_weights.keys())}"
+            )
+
+            # Synchronize restored learner weights to the environment runner.
+            algo.env_runner_group.sync_weights(
+                from_worker_or_learner_group=algo.learner_group
+            )
+
+            print("Restored learner weights synchronized to environment runner.")
+
+        # Verify the active environment configuration.
+        effective_env_config = dict(algo.config.env_config)
+
+        expected_settings = {
+            "exploration_reward_mode": args.exploration_reward_mode,
+            "exploration_voxel_reference": args.exploration_voxel_reference,
+            "separation_reward_enabled": args.separation_reward_enabled,
+            "preferred_separation": args.preferred_separation,
+            "separation_penalty_scale": args.separation_penalty_scale,
+            "num_agents": args.agents,
+            "max_episode_steps": args.steps,
+            "stage": args.stage,
+            "reward_scale": args.reward_scale,
+        }
+
+        print("\nActive environment configuration:")
+
+        for key, expected in expected_settings.items():
+            actual = effective_env_config.get(key)
+            print(f"  {key}: {actual}")
+
+            if isinstance(expected, float):
+                matches = (
+                    actual is not None
+                    and math.isclose(
+                        float(actual),
+                        expected,
+                        rel_tol=1e-9,
+                        abs_tol=1e-9,
+                    )
+                )
+            else:
+                matches = actual == expected
+
+            if not matches:
+                raise RuntimeError(
+                    f"Environment configuration mismatch for {key}: "
+                    f"expected {expected}, got {actual}"
+                )
+
+        print("\nEnvironment configuration verification passed.")
+
+        if resume_path is not None:
+            print("Checkpoint learner restoration verification passed.")
 
         fields = [
             "timestamp",
@@ -316,7 +442,9 @@ def main():
                     )
 
                     saved = algo.save_to_path(str(checkpoint_dir))
-                    checkpoint = str(getattr(saved, "path", checkpoint_dir))
+                    checkpoint = str(
+                        getattr(saved, "path", checkpoint_dir)
+                    )
                     row["checkpoint_path"] = checkpoint
 
                 writer.writerow(row)
@@ -345,8 +473,7 @@ def main():
 
                 if sampled_steps is None:
                     print(
-                        "  NOTE: environment-step metric was not found. "
-                        "Use --debug-metrics to inspect RLlib metric keys."
+                        "  NOTE: environment-step metric was not found."
                     )
 
         print(f"\nTraining run finished. CSV log: {log_path}")
