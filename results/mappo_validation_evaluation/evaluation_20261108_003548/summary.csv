@@ -1,0 +1,7 @@
+metric,baseline_mean,baseline_std,trained_mean,trained_std,trained_minus_baseline
+raw_episode_return,353.27808789634145,62.69193319669894,309.4991186294661,51.48694102241213,-43.77896926687532
+coverage_pct,4.362,0.7359222785050062,3.8444,0.6541350319314811,-0.5176000000000003
+collision_events,0.0,0.0,0.0,0.0,0.0
+agent_steps,512.0,0.0,512.0,0.0,0.0
+environment_steps,128.0,0.0,128.0,0.0,0.0
+collisions_per_1k_agent_steps,0.0,0.0,0.0,0.0,0.0

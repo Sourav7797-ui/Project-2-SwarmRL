@@ -1,0 +1,44 @@
+{
+  "checkpoint": "C:\\Users\\mishr\\OneDrive\\Desktop\\SwarmRL\\checkpoints\\day10\\checkpoint_20261028_232916_952302\\iteration_0001",
+  "episodes": 3,
+  "agents": 8,
+  "max_episode_steps": 32,
+  "stage": "static_world",
+  "reward_scale": 0.05,
+  "exploration_enabled": false,
+  "episode_results": [
+    {
+      "episode": 1,
+      "steps": 32,
+      "raw_return": 23.982896853616694,
+      "environment_stats": {
+        "coverage_pct": 0.128,
+        "collision_events": 0,
+        "agent_steps": 256
+      }
+    },
+    {
+      "episode": 2,
+      "steps": 32,
+      "raw_return": 21.189414920983836,
+      "environment_stats": {
+        "coverage_pct": 0.124,
+        "collision_events": 0,
+        "agent_steps": 256
+      }
+    },
+    {
+      "episode": 3,
+      "steps": 32,
+      "raw_return": 22.333185617811978,
+      "environment_stats": {
+        "coverage_pct": 0.128,
+        "collision_events": 0,
+        "agent_steps": 256
+      }
+    }
+  ],
+  "mean_raw_return": 22.501832464137504,
+  "min_raw_return": 21.189414920983836,
+  "max_raw_return": 23.982896853616694
+}

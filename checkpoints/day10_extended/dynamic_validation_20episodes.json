@@ -1,0 +1,477 @@
+{
+  "checkpoint": "C:\\Users\\mishr\\OneDrive\\Desktop\\SwarmRL\\checkpoints\\day10_extended\\checkpoint_20261029_000228_781331\\iteration_0020",
+  "agents": 8,
+  "max_episode_steps": 32,
+  "stage": "dynamic_obstacles",
+  "reward_scale": 0.05,
+  "episodes": 20,
+  "seed_start": 5000,
+  "ppo": {
+    "policy": "trained PPO, deterministic actions",
+    "episodes": [
+      {
+        "steps": 32,
+        "raw_return": 40.276305892679375,
+        "coverage_pct": 0.2,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 1,
+        "seed": 5000
+      },
+      {
+        "steps": 32,
+        "raw_return": 50.89358564373106,
+        "coverage_pct": 0.232,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 2,
+        "seed": 5001
+      },
+      {
+        "steps": 32,
+        "raw_return": 45.76663389755413,
+        "coverage_pct": 0.22,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 3,
+        "seed": 5002
+      },
+      {
+        "steps": 32,
+        "raw_return": 45.62941158382455,
+        "coverage_pct": 0.212,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 4,
+        "seed": 5003
+      },
+      {
+        "steps": 32,
+        "raw_return": 41.61615761226858,
+        "coverage_pct": 0.2,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 5,
+        "seed": 5004
+      },
+      {
+        "steps": 32,
+        "raw_return": 39.210210983175784,
+        "coverage_pct": 0.196,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 6,
+        "seed": 5005
+      },
+      {
+        "steps": 32,
+        "raw_return": 53.32105835713446,
+        "coverage_pct": 0.23600000000000002,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 7,
+        "seed": 5006
+      },
+      {
+        "steps": 32,
+        "raw_return": 36.34628947894089,
+        "coverage_pct": 0.192,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 8,
+        "seed": 5007
+      },
+      {
+        "steps": 32,
+        "raw_return": 48.17269250424579,
+        "coverage_pct": 0.22399999999999998,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 9,
+        "seed": 5008
+      },
+      {
+        "steps": 32,
+        "raw_return": 42.6583029483445,
+        "coverage_pct": 0.20400000000000001,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 10,
+        "seed": 5009
+      },
+      {
+        "steps": 32,
+        "raw_return": 42.826997473312076,
+        "coverage_pct": 0.212,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 11,
+        "seed": 5010
+      },
+      {
+        "steps": 32,
+        "raw_return": 37.32050520868506,
+        "coverage_pct": 0.192,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 12,
+        "seed": 5011
+      },
+      {
+        "steps": 32,
+        "raw_return": 39.79333989942097,
+        "coverage_pct": 0.196,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 13,
+        "seed": 5012
+      },
+      {
+        "steps": 32,
+        "raw_return": 38.992357396753505,
+        "coverage_pct": 0.2,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 14,
+        "seed": 5013
+      },
+      {
+        "steps": 32,
+        "raw_return": 37.69680746609811,
+        "coverage_pct": 0.192,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 15,
+        "seed": 5014
+      },
+      {
+        "steps": 32,
+        "raw_return": 40.56631213799119,
+        "coverage_pct": 0.2,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 16,
+        "seed": 5015
+      },
+      {
+        "steps": 32,
+        "raw_return": 39.18449246417731,
+        "coverage_pct": 0.2,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 17,
+        "seed": 5016
+      },
+      {
+        "steps": 32,
+        "raw_return": 51.89348089369014,
+        "coverage_pct": 0.232,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 18,
+        "seed": 5017
+      },
+      {
+        "steps": 32,
+        "raw_return": 42.45708809635835,
+        "coverage_pct": 0.2,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 19,
+        "seed": 5018
+      },
+      {
+        "steps": 32,
+        "raw_return": 50.18868581345305,
+        "coverage_pct": 0.22799999999999998,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 20,
+        "seed": 5019
+      }
+    ],
+    "summary": {
+      "episodes": 20,
+      "raw_return": {
+        "mean": 43.240535787591945,
+        "min": 36.34628947894089,
+        "max": 53.32105835713446
+      },
+      "coverage_pct": {
+        "mean": 0.2084,
+        "min": 0.192,
+        "max": 0.23600000000000002
+      },
+      "collision_events": {
+        "mean": 0,
+        "min": 0,
+        "max": 0
+      },
+      "collisions_per_1k": {
+        "mean": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "steps": {
+        "mean": 32,
+        "min": 32,
+        "max": 32
+      }
+    }
+  },
+  "random": {
+    "policy": "uniform random normalized actions",
+    "episodes": [
+      {
+        "steps": 32,
+        "raw_return": 17.349870069418103,
+        "coverage_pct": 0.11199999999999999,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 1,
+        "seed": 5000
+      },
+      {
+        "steps": 32,
+        "raw_return": 19.970489882398397,
+        "coverage_pct": 0.116,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 2,
+        "seed": 5001
+      },
+      {
+        "steps": 32,
+        "raw_return": 18.45795823354274,
+        "coverage_pct": 0.11199999999999999,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 3,
+        "seed": 5002
+      },
+      {
+        "steps": 32,
+        "raw_return": 20.441058662661817,
+        "coverage_pct": 0.116,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 4,
+        "seed": 5003
+      },
+      {
+        "steps": 32,
+        "raw_return": 19.332148732617497,
+        "coverage_pct": 0.116,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 5,
+        "seed": 5004
+      },
+      {
+        "steps": 32,
+        "raw_return": 20.23620055988431,
+        "coverage_pct": 0.12,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 6,
+        "seed": 5005
+      },
+      {
+        "steps": 32,
+        "raw_return": 22.503722564317286,
+        "coverage_pct": 0.12,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 7,
+        "seed": 5006
+      },
+      {
+        "steps": 32,
+        "raw_return": 9.596957882517017,
+        "coverage_pct": 0.084,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 8,
+        "seed": 5007
+      },
+      {
+        "steps": 32,
+        "raw_return": 16.308830509893596,
+        "coverage_pct": 0.104,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 9,
+        "seed": 5008
+      },
+      {
+        "steps": 32,
+        "raw_return": 19.899114221334457,
+        "coverage_pct": 0.116,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 10,
+        "seed": 5009
+      },
+      {
+        "steps": 32,
+        "raw_return": 17.687846111424733,
+        "coverage_pct": 0.11199999999999999,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 11,
+        "seed": 5010
+      },
+      {
+        "steps": 32,
+        "raw_return": 15.738117769826204,
+        "coverage_pct": 0.104,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 12,
+        "seed": 5011
+      },
+      {
+        "steps": 32,
+        "raw_return": 22.398312162258662,
+        "coverage_pct": 0.128,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 13,
+        "seed": 5012
+      },
+      {
+        "steps": 32,
+        "raw_return": 22.53409448103048,
+        "coverage_pct": 0.128,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 14,
+        "seed": 5013
+      },
+      {
+        "steps": 32,
+        "raw_return": 19.675086953808204,
+        "coverage_pct": 0.116,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 15,
+        "seed": 5014
+      },
+      {
+        "steps": 32,
+        "raw_return": 16.488202023581835,
+        "coverage_pct": 0.104,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 16,
+        "seed": 5015
+      },
+      {
+        "steps": 32,
+        "raw_return": 19.639835057707387,
+        "coverage_pct": 0.12,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 17,
+        "seed": 5016
+      },
+      {
+        "steps": 32,
+        "raw_return": 25.269457379356027,
+        "coverage_pct": 0.132,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 18,
+        "seed": 5017
+      },
+      {
+        "steps": 32,
+        "raw_return": 23.96884075854905,
+        "coverage_pct": 0.124,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 19,
+        "seed": 5018
+      },
+      {
+        "steps": 32,
+        "raw_return": 22.24339709803462,
+        "coverage_pct": 0.12,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 20,
+        "seed": 5019
+      }
+    ],
+    "summary": {
+      "episodes": 20,
+      "raw_return": {
+        "mean": 19.48697705570812,
+        "min": 9.596957882517017,
+        "max": 25.269457379356027
+      },
+      "coverage_pct": {
+        "mean": 0.1152,
+        "min": 0.084,
+        "max": 0.132
+      },
+      "collision_events": {
+        "mean": 0,
+        "min": 0,
+        "max": 0
+      },
+      "collisions_per_1k": {
+        "mean": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "steps": {
+        "mean": 32,
+        "min": 32,
+        "max": 32
+      }
+    }
+  },
+  "mean_return_difference_ppo_minus_random": 23.753558731883825,
+  "mean_coverage_difference_percentage_points": 0.0932
+}

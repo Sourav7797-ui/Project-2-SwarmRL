@@ -1,0 +1,11 @@
+timestamp,evaluation_number,episode,checkpoint_path,stage,stage_index,reward_raw,coverage_pct,drone_drone_collisions,drone_obstacle_collisions,total_collision_events,agent_steps,episode_steps,reward_scale
+2026-10-28T20:18:23.040844+00:00,1,1,C:\Users\mishr\OneDrive\Desktop\SwarmRL\checkpoints\day10\checkpoint_20261028_232916_952302\iteration_0001,static_world,0,18.199402987840585,0.12,0,0,0,256,32,0.05
+2026-10-28T20:18:23.202684+00:00,2,2,C:\Users\mishr\OneDrive\Desktop\SwarmRL\checkpoints\day10\checkpoint_20261028_232916_952302\iteration_0001,static_world,0,20.63783261179924,0.116,0,0,0,256,32,0.05
+2026-10-28T20:18:23.348871+00:00,3,3,C:\Users\mishr\OneDrive\Desktop\SwarmRL\checkpoints\day10\checkpoint_20261028_232916_952302\iteration_0001,static_world,0,27.233095169212902,0.136,0,0,0,256,32,0.05
+2026-10-28T20:18:23.506793+00:00,4,4,C:\Users\mishr\OneDrive\Desktop\SwarmRL\checkpoints\day10\checkpoint_20261028_232916_952302\iteration_0001,static_world,0,24.96496026137902,0.136,0,0,0,256,32,0.05
+2026-10-28T20:18:23.661035+00:00,5,5,C:\Users\mishr\OneDrive\Desktop\SwarmRL\checkpoints\day10\checkpoint_20261028_232916_952302\iteration_0001,static_world,0,23.0960283447057,0.136,0,0,0,256,32,0.05
+2026-10-28T20:32:36.491639+00:00,6,1,C:\Users\mishr\OneDrive\Desktop\SwarmRL\checkpoints\day10\checkpoint_20261028_232916_952302\iteration_0001,static_world,0,443.38135150373273,2.828,0,0,0,8000,1000,0.05
+2026-10-28T20:32:41.488323+00:00,7,2,C:\Users\mishr\OneDrive\Desktop\SwarmRL\checkpoints\day10\checkpoint_20261028_232916_952302\iteration_0001,static_world,0,551.5976406212721,3.024,0,0,0,8000,1000,0.05
+2026-10-28T20:32:46.326171+00:00,8,3,C:\Users\mishr\OneDrive\Desktop\SwarmRL\checkpoints\day10\checkpoint_20261028_232916_952302\iteration_0001,static_world,0,367.7247920750342,2.58,0,0,0,8000,1000,0.05
+2026-10-28T20:32:51.405481+00:00,9,4,C:\Users\mishr\OneDrive\Desktop\SwarmRL\checkpoints\day10\checkpoint_20261028_232916_952302\iteration_0001,static_world,0,237.40679304648984,2.8000000000000003,2,0,2,8000,1000,0.05
+2026-10-28T20:32:56.376847+00:00,10,5,C:\Users\mishr\OneDrive\Desktop\SwarmRL\checkpoints\day10\checkpoint_20261028_232916_952302\iteration_0001,static_world,0,483.20337270553864,2.852,0,0,0,8000,1000,0.05

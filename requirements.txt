@@ -1,0 +1,22 @@
+# Core reinforcement learning
+ray[rllib]==2.59.0
+gymnasium==1.2.2
+pettingzoo==1.27.0
+
+# Numerical computing and data processing
+numpy==2.2.0
+pandas==2.2.3
+
+# Visualization and dashboard
+matplotlib==3.10.3
+streamlit==1.61.1
+
+# System monitoring
+psutil==7.2.2
+
+# Deep learning
+torch==2.11.0
+# 3D visualization API
+fastapi==0.141.1
+uvicorn==0.41.0
+websockets==16.0

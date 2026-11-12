@@ -1,0 +1,7 @@
+stage,checkpoint_run,evaluation_directory,baseline_return_mean,mappo_return_mean,return_delta,return_improvement_percent,mappo_return_std,baseline_coverage_percent,mappo_coverage_percent,coverage_delta_percentage_points,baseline_collision_events_mean,mappo_collision_events_mean,episodes,agents,first_seed,environment_steps_per_episode,agent_steps_per_episode,training_performed
+static_world,run_1,evaluation_20261106_150639,353.2781,417.0827,63.8046,18.10,51.5337,4.3620,6.3404,1.9784,0,0,10,4,42,128,512,false
+static_world,run_2,evaluation_20261106_153741,353.2781,433.3080,80.0299,22.65,39.3352,4.3620,6.4004,2.0384,0,0,10,4,42,128,512,false
+dynamic_obstacles,run_1,evaluation_20261106_160121,346.0369,420.5421,74.5051,21.50,55.8577,4.3436,6.3744,2.0308,0,0,10,4,42,128,512,false
+dynamic_obstacles,run_2,evaluation_20261106_163152,346.0369,441.5333,95.4964,27.60,38.6186,4.3436,6.5184,2.1748,0,0,10,4,42,128,512,false
+wind,run_1,evaluation_20261106_163418,312.3513,399.4553,87.1041,27.90,67.7267,4.2388,6.2040,1.9652,0.1,0.1,10,4,42,128,512,false
+wind,run_2,evaluation_20261106_163620,312.3513,426.0723,113.7210,36.40,32.9954,4.2388,6.5124,2.2736,0.1,0,10,4,42,128,512,false

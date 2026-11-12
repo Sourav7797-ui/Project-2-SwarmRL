@@ -1,0 +1,117 @@
+{
+  "checkpoint": "C:\\Users\\mishr\\OneDrive\\Desktop\\SwarmRL\\checkpoints\\day10_dynamic\\checkpoint_20261029_001747_294423\\iteration_0020",
+  "agents": 8,
+  "max_episode_steps": 32,
+  "stage": "dynamic_obstacles",
+  "reward_scale": 0.05,
+  "episodes": 2,
+  "seed_start": 5000,
+  "ppo": {
+    "policy": "trained PPO, deterministic actions",
+    "episodes": [
+      {
+        "steps": 32,
+        "raw_return": 223.27171009406447,
+        "coverage_pct": 5.264,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 1,
+        "seed": 5000
+      },
+      {
+        "steps": 32,
+        "raw_return": 218.4427874656394,
+        "coverage_pct": 5.028,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 2,
+        "seed": 5001
+      }
+    ],
+    "summary": {
+      "episodes": 2,
+      "raw_return": {
+        "mean": 220.85724877985194,
+        "min": 218.4427874656394,
+        "max": 223.27171009406447
+      },
+      "coverage_pct": {
+        "mean": 5.146,
+        "min": 5.028,
+        "max": 5.264
+      },
+      "collision_events": {
+        "mean": 0,
+        "min": 0,
+        "max": 0
+      },
+      "collisions_per_1k": {
+        "mean": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "steps": {
+        "mean": 32,
+        "min": 32,
+        "max": 32
+      }
+    }
+  },
+  "random": {
+    "policy": "uniform random normalized actions",
+    "episodes": [
+      {
+        "steps": 32,
+        "raw_return": 184.2998723713681,
+        "coverage_pct": 3.436,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 1,
+        "seed": 5000
+      },
+      {
+        "steps": 32,
+        "raw_return": 208.9704957678914,
+        "coverage_pct": 3.7359999999999998,
+        "collision_events": 0,
+        "agent_steps": 256,
+        "collisions_per_1k": 0.0,
+        "episode": 2,
+        "seed": 5001
+      }
+    ],
+    "summary": {
+      "episodes": 2,
+      "raw_return": {
+        "mean": 196.63518406962976,
+        "min": 184.2998723713681,
+        "max": 208.9704957678914
+      },
+      "coverage_pct": {
+        "mean": 3.586,
+        "min": 3.436,
+        "max": 3.7359999999999998
+      },
+      "collision_events": {
+        "mean": 0,
+        "min": 0,
+        "max": 0
+      },
+      "collisions_per_1k": {
+        "mean": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "steps": {
+        "mean": 32,
+        "min": 32,
+        "max": 32
+      }
+    }
+  },
+  "mean_return_difference_ppo_minus_random": 24.222064710222185,
+  "mean_coverage_difference_percentage_points": 1.56
+}

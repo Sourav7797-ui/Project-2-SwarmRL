@@ -1,0 +1,3 @@
+timestamp,iteration,iteration_seconds,sampled_env_steps,episode_return_mean_raw,episode_length_mean,policy_loss,value_loss,entropy,value_explained_variance,checkpoint_path
+2026-11-01T13:47:25+05:30,1,1.15,64,207.5633,64.0,-0.1210113912820816,0.0355641171336174,4.6434149742126465,0.2311972975730896,
+2026-11-01T13:47:26+05:30,2,0.91,128,257.3267,64.0,0.19649004936218262,0.03602399677038193,4.75231409072876,0.21590274572372437,C:\Users\mishr\OneDrive\Desktop\SwarmRL\checkpoints\day15_voxel_log_smoke\checkpoint_20261101_134726_619290\iteration_0002

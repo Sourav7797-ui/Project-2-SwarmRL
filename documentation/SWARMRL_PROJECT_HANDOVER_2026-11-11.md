@@ -1,0 +1,271 @@
+# SwarmRL — Project Handover Report
+
+
+
+**Handover date:** 12 November 2026  
+
+**Project:** SwarmRL — Multi-Agent Reinforcement Learning for Swarm Robotics
+
+
+
+## 1. Executive Summary
+
+
+
+SwarmRL is an integrated multi-agent reinforcement learning project with an established PPO pipeline and an experimental MAPPO implementation.
+
+
+
+The current engineering phase is substantially complete. The project has undergone implementation checks, technical audits, regression testing, dashboard verification, multi-seed MAPPO evaluation and documentation updates.
+
+
+
+**Overall conclusion:** The project is suitable for an engineering handover with the limitations below explicitly disclosed. MAPPO has not demonstrated robust superiority over PPO.
+
+
+
+## 2. Project Components
+
+
+
+- PPO reference training and evaluation pipeline.
+
+- Experimental MAPPO implementation using a shared decentralized actor and centralized critic.
+
+- RLlib/Gymnasium environment integration.
+
+- Static-world, dynamic-obstacle and wind evaluation stages.
+
+- Streamlit dashboard for results inspection and comparison.
+
+- Regression tests and technical documentation.
+
+- Preserved checkpoints, evaluation results and experiment artifacts.
+
+
+
+## 3. Verification Evidence
+
+
+
+### Regression testing
+
+
+
+Latest recorded full regression result:
+
+
+
+- 342 passed
+
+- 2 skipped
+
+- 0 failed
+- Completed in 54.14 seconds (12 November 2026)
+
+
+
+The two skipped tests are intentional opt-in PPO and MAPPO training smoke tests. The standard test run did not execute those training tests.
+
+
+
+### Dashboard
+
+
+
+The primary Streamlit dashboard was launched and visually verified.
+
+
+
+Launch command:
+
+
+
+`python -m streamlit run .\\frontend\\dashboard.py`
+
+
+
+### 3D Viewer and API integration
+
+The React/Vite/Three.js viewer and FastAPI backend were verified locally.
+
+- Production frontend build completed successfully using 
+pm run build.
+- Browser verification covered 50 drones, movement and trails, coverage points, obstacles, camera controls, and Start/Pause/Reset.
+- REST health and state endpoints returned valid responses, including 50-agent state.
+- A 30-second REST polling check completed 15 samples; the simulation advanced 230 steps and all samples retained 50 agents.
+- Average REST request latency was approximately 68.49 ms; maximum observed latency was 99.34 ms in this local test.
+- Three concurrent WebSocket clients each received 20 valid JSON messages containing 50-agent state.
+- Pause, reset, start, reconnect, and final paused/reset lifecycle checks passed.
+
+These checks are limited local integration tests, not a high-load benchmark or long-duration soak test. Browser frame rate was not quantitatively benchmarked.
+
+**Policy distinction:** The 3D viewer currently uses a deterministic demo controller. It does not execute a trained PPO or MAPPO checkpoint.
+
+### Documentation
+
+
+
+The following documents are present:
+
+
+
+- `README.md`
+
+- `documentation/MAPPO_DAY1_AUDIT.md`
+
+- `documentation/MAPPO_DAY2_EXPERIMENT_PROTOCOL.md`
+
+- `documentation/MAPPO_FINAL_VALIDATION_REPORT.md`
+
+- `documentation/SWARMRL_SHA256_BASELINE_2026-11-11.csv`
+
+
+
+## 4. MAPPO Validation Findings
+
+
+
+Three independent validation training seeds were evaluated across static-world, dynamic-obstacle and wind stages.
+
+
+
+The results were mixed:
+
+
+
+- Seed 123 performed below PPO across all three stages.
+
+- Seed 2026 showed promising dynamic-obstacle and wind results, but did not improve static-world return.
+
+- Seed 31415 performed below PPO across all three stages.
+
+
+
+The validation did not establish consistent MAPPO improvement. PPO therefore remains the reference baseline, and MAPPO remains experimental.
+
+
+
+## 5. Integrity Audit
+
+
+
+The original SHA-256 manifest contains 1,146 entries.
+
+
+
+Corrected verification found:
+
+
+
+- 1,144 matching files.
+
+- 2 documented differences.
+
+- 0 missing files.
+
+
+
+The two differences are the Day 1 audit and Day 2 experiment protocol Markdown files, which were reformatted after the manifest was generated.
+
+
+
+The original manifest has been preserved as a historical baseline and has not been regenerated.
+
+
+
+## 6. Important Operating Commands
+
+
+
+Run from the project root.
+
+
+
+**Launch dashboard:**
+
+
+
+`python -m streamlit run .\\frontend\\dashboard.py`
+
+
+
+**Run regression tests:**
+
+
+
+`python -m pytest -q`
+
+
+
+The two opt-in training smoke tests are not part of the standard test run.
+
+
+
+## 7. Outstanding Limitations and Future Work
+
+
+
+1\. Conduct additional independent MAPPO training runs.
+
+2\. Increase training duration and evaluation episode counts.
+
+3\. Compare PPO and MAPPO under equivalent, controlled training protocols.
+
+4\. Examine convergence, policy loss, value loss, entropy, KL divergence and gradient metrics.
+
+5\. Expand safety and scalability validation across agent counts.
+
+6\. Perform a clean-environment installation and startup test before deployment.
+
+
+
+These are future research and deployment tasks, not evidence of failure in the current regression suite.
+
+
+
+## 8. Handover Assessment
+
+
+
+| Area | Assessment |
+
+|---|---|
+
+| PPO reference pipeline | Preserved |
+
+| MAPPO integration | Complete; experimental |
+
+| Dashboard | Visually verified |
+
+| Regression suite | 342 passed, 2 skipped, 0 failed |
+
+| Technical documentation | Present |
+
+| Experiment evidence | Documented |
+
+| Integrity audit | Reconciled |
+
+| MAPPO superiority | Not established |
+
+| Production deployment certification | Not established |
+
+
+
+## 9. Final Recommendation
+
+
+
+The current SwarmRL engineering phase can be closed and handed over with the available evidence.
+
+
+
+PPO should remain the reference implementation. MAPPO should be retained as an experimental research branch until further controlled experiments establish reliable improvement.
+
+
+
+All existing checkpoints, experiment results and the original SHA-256 baseline should be preserved.
+
+
+
+**Handover status: Engineering phase ready for handover, subject to the stated limitations.**
