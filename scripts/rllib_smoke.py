@@ -13,7 +13,6 @@ Run from the project root:
 from __future__ import annotations
 
 import argparse
-import logging
 import math
 import os
 import sys
@@ -38,15 +37,24 @@ def main() -> int:
     parser.add_argument("--iterations", type=int, default=2)
     parser.add_argument("--workers", type=int, default=0, help="Ray env runners (0 = sample in this process)")
     parser.add_argument("--cpus", type=int, default=None, help="CPUs Ray may use (default: all detected)")
+    parser.add_argument("--object-store-mb", type=int, default=512,
+                        help="Ray object store size; lower it if Ray refuses to start for lack of RAM")
     parser.add_argument("--stage", default=None, choices=[None, "static_world", "dynamic_obstacles", "wind"])
     parser.add_argument("--reward-scale", type=float, default=0.05)
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
 
-    # Ray worker processes are started fresh (always on Windows) and must be able to
-    # `import backend`: make the project root visible to them before Ray starts.
-    os.environ["PYTHONPATH"] = str(ROOT) + os.pathsep + os.environ.get("PYTHONPATH", "")
     sys.path.insert(0, str(ROOT))
+
+    # Must happen BEFORE `import ray`: puts the project on PYTHONPATH for the worker
+    # processes and stops RLlib importing TensorFlow (we only use torch).
+    from backend.training.ray_runtime import (
+        InsufficientMemoryError,
+        available_memory_gb,
+        configure_environment,
+        init_ray,
+    )
+    configure_environment()
 
     import ray
 
@@ -62,11 +70,19 @@ def main() -> int:
 
     print(f"ray {ray.__version__} | agents={args.agents} episode={args.steps} steps | "
           f"env runners={args.workers} | stage={args.stage}")
+    free_gb = available_memory_gb()
+    if free_gb is not None:
+        note = "   <-- LOW: close other applications first" if free_gb < 2.0 else ""
+        print(f"free RAM: {free_gb:.1f} GB{note}")
     print(f"per iteration: {samples_per_iteration(args.agents, batch):,} samples, "
           f"~{approx_gradient_updates_per_iteration(args.agents, batch, minibatch, epochs)} gradient updates "
           f"(minibatch {minibatch}, {epochs} epochs)")
 
-    ray.init(num_cpus=args.cpus, include_dashboard=False, logging_level=logging.ERROR, ignore_reinit_error=True)
+    try:
+        init_ray(num_cpus=args.cpus, object_store_mb=args.object_store_mb)
+    except InsufficientMemoryError as exc:
+        print(f"\nERROR: {exc}")
+        return 2
     algo = None
     try:
         config = build_ppo_config(

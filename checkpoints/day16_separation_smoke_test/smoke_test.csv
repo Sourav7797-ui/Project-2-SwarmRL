@@ -1,0 +1,3 @@
+timestamp,iteration,iteration_seconds,sampled_env_steps,episode_return_mean_raw,episode_length_mean,policy_loss,value_loss,entropy,value_explained_variance,checkpoint_path
+2026-11-01T22:28:11+05:30,1,1.16,64,442.6411,64.0,0.01008332334458828,0.008662759326398373,8.199906349182129,0.97613924741745,C:\Users\mishr\OneDrive\Desktop\SwarmRL\checkpoints\day16_separation_smoke_test\checkpoint_20261101_222811_599045\iteration_0001
+2026-11-01T22:28:12+05:30,2,1.2,128,507.8441,64.0,0.10887586325407028,0.0038055989425629377,8.306391716003418,0.7846757769584656,C:\Users\mishr\OneDrive\Desktop\SwarmRL\checkpoints\day16_separation_smoke_test\checkpoint_20261101_222812_870743\iteration_0002

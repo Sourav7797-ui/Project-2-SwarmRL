@@ -1,4 +1,4 @@
-﻿"""Central configuration for the SwarmRL environment."""
+"""Central configuration for the SwarmRL environment."""
 from dataclasses import dataclass
 
 

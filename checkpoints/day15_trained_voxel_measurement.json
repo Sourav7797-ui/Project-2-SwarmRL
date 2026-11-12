@@ -1,0 +1,217 @@
+{
+    "experiment": "day15_trained_policy_voxel_measurement",
+    "timestamp": "2026-10-30T23:55:56.126787",
+    "checkpoint": "C:\\Users\\mishr\\OneDrive\\Desktop\\SwarmRL\\checkpoints\\day13_dynamic_64step_100iter\\checkpoint_20261030_010304_802779\\iteration_0080",
+    "checkpoint_stage": "dynamic_obstacles",
+    "evaluation_stage": "dynamic_obstacles",
+    "agents": 8,
+    "steps_per_episode": 64,
+    "episodes": 10,
+    "reward_scale": 0.05,
+    "seed_start": 7000,
+    "mean_new_voxels": 3086.9,
+    "median_new_voxels": 3143.0,
+    "min_new_voxels": 2750,
+    "max_new_voxels": 3305,
+    "total_new_voxels": 30869,
+    "step_discovery_mean": 5.1984375,
+    "step_discovery_median": 5.0,
+    "step_discovery_p90": 10.0,
+    "step_discovery_p95": 11.0,
+    "step_discovery_max": 24,
+    "zero_discovery_pct": 8.984375,
+    "mean_coverage_pct": 12.3476,
+    "mean_collisions": 2.7,
+    "mean_voxels_per_drone": [
+        395.3,
+        393,
+        403.2,
+        388.5,
+        397.7,
+        346.4,
+        398.3,
+        364.5
+    ],
+    "episodes_detail": [
+        {
+            "episode": 1,
+            "seed": 7000,
+            "steps": 64,
+            "new_voxels_total": 3194,
+            "new_voxels_per_drone": [
+                361,
+                426,
+                410,
+                409,
+                435,
+                336,
+                402,
+                415
+            ],
+            "coverage_pct": 12.776000000000002,
+            "collisions": 0
+        },
+        {
+            "episode": 2,
+            "seed": 7001,
+            "steps": 64,
+            "new_voxels_total": 3146,
+            "new_voxels_per_drone": [
+                413,
+                481,
+                477,
+                479,
+                432,
+                241,
+                437,
+                186
+            ],
+            "coverage_pct": 12.584000000000001,
+            "collisions": 0
+        },
+        {
+            "episode": 3,
+            "seed": 7002,
+            "steps": 64,
+            "new_voxels_total": 2807,
+            "new_voxels_per_drone": [
+                419,
+                247,
+                268,
+                493,
+                365,
+                105,
+                453,
+                457
+            ],
+            "coverage_pct": 11.228,
+            "collisions": 27
+        },
+        {
+            "episode": 4,
+            "seed": 7003,
+            "steps": 64,
+            "new_voxels_total": 2999,
+            "new_voxels_per_drone": [
+                430,
+                221,
+                440,
+                417,
+                413,
+                339,
+                245,
+                494
+            ],
+            "coverage_pct": 11.996,
+            "collisions": 0
+        },
+        {
+            "episode": 5,
+            "seed": 7004,
+            "steps": 64,
+            "new_voxels_total": 3040,
+            "new_voxels_per_drone": [
+                323,
+                413,
+                502,
+                199,
+                435,
+                472,
+                451,
+                245
+            ],
+            "coverage_pct": 12.16,
+            "collisions": 0
+        },
+        {
+            "episode": 6,
+            "seed": 7005,
+            "steps": 64,
+            "new_voxels_total": 3242,
+            "new_voxels_per_drone": [
+                422,
+                493,
+                327,
+                443,
+                461,
+                445,
+                462,
+                189
+            ],
+            "coverage_pct": 12.967999999999998,
+            "collisions": 0
+        },
+        {
+            "episode": 7,
+            "seed": 7006,
+            "steps": 64,
+            "new_voxels_total": 3305,
+            "new_voxels_per_drone": [
+                432,
+                403,
+                321,
+                433,
+                388,
+                460,
+                438,
+                430
+            ],
+            "coverage_pct": 13.22,
+            "collisions": 0
+        },
+        {
+            "episode": 8,
+            "seed": 7007,
+            "steps": 64,
+            "new_voxels_total": 2750,
+            "new_voxels_per_drone": [
+                344,
+                465,
+                420,
+                299,
+                259,
+                301,
+                297,
+                365
+            ],
+            "coverage_pct": 11.0,
+            "collisions": 0
+        },
+        {
+            "episode": 9,
+            "seed": 7008,
+            "steps": 64,
+            "new_voxels_total": 3246,
+            "new_voxels_per_drone": [
+                372,
+                477,
+                473,
+                264,
+                374,
+                429,
+                441,
+                416
+            ],
+            "coverage_pct": 12.984000000000002,
+            "collisions": 0
+        },
+        {
+            "episode": 10,
+            "seed": 7009,
+            "steps": 64,
+            "new_voxels_total": 3140,
+            "new_voxels_per_drone": [
+                437,
+                304,
+                394,
+                449,
+                415,
+                336,
+                357,
+                448
+            ],
+            "coverage_pct": 12.559999999999999,
+            "collisions": 0
+        }
+    ]
+}

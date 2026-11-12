@@ -1,0 +1,26 @@
+{
+  "algorithm": "MAPPO",
+  "architecture": "shared decentralized actor + centralized critic",
+  "agents": 4,
+  "max_episode_steps": 128,
+  "stage": "static_world",
+  "reward_scale": 0.05,
+  "iterations": 10,
+  "train_batch_size": 128,
+  "train_batch_counting_unit": "environment_steps",
+  "minibatch_size": 128,
+  "epochs": 2,
+  "learning_rate": 0.0003,
+  "hidden_layers": [
+    64,
+    64
+  ],
+  "seed": 31415,
+  "num_env_runners": 0,
+  "num_cpus": 2,
+  "object_store_mb": 100,
+  "agent_samples_per_iteration_estimate": 512,
+  "approx_optimizer_updates_per_iteration": 8,
+  "checkpoint_every": 5,
+  "run_id": "20261108_003040_192693"
+}

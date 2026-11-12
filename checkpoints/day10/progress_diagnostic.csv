@@ -1,0 +1,2 @@
+timestamp,iteration,iteration_seconds,sampled_env_steps,episode_return_mean_raw,episode_length_mean,policy_loss,value_loss,entropy,value_explained_variance,checkpoint_path
+2026-10-28T23:29:16+05:30,1,0.6,32,8.1868,32.0,-0.4788364768028259,0.0019657735247164965,4.853891849517822,-0.3699464797973633,C:\Users\mishr\OneDrive\Desktop\SwarmRL\checkpoints\day10\checkpoint_20261028_232916_952302\iteration_0001

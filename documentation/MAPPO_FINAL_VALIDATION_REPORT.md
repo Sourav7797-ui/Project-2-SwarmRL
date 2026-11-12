@@ -1,0 +1,792 @@
+# SwarmRL MAPPO — Final Validation Report
+
+
+
+**Report date:** 11 November 2026  
+
+**Project:** SwarmRL  
+
+**Scope:** MAPPO implementation audit, three-seed validation, cross-stage evaluation, PPO baseline comparison, and project recommendations.
+
+
+
+---
+
+
+
+## 1. Executive Summary
+
+
+
+The SwarmRL MAPPO implementation passed its available structural, integration, and regression checks. The architecture follows a shared decentralized actor and centralized critic design, with the actor using local observations and the critic using global state.
+
+
+
+Three controlled MAPPO validation runs were completed using identical recorded configurations and different random seeds: 123, 2026, and 31415. Each checkpoint was independently evaluated against the existing PPO baseline across static-world, dynamic-obstacle, and wind stages.
+
+
+
+The results demonstrate substantial seed sensitivity.
+
+
+
+- Seed 123 underperformed the PPO baseline in mean episode return across all three stages.
+
+- Seed 31415 also underperformed the baseline in mean episode return across all three stages.
+
+- Seed 2026 produced the strongest overall result, improving mean coverage across all three stages and mean return in dynamic-obstacle and wind evaluations.
+
+- Three unadjusted paired 95% return confidence intervals excluded zero, all in the negative direction: seed 123 static-world, seed 123 dynamic-obstacle, and seed 31415 static-world. The other six intervals included zero.
+
+
+
+**Final assessment:** MAPPO is a technically credible experimental implementation with promising coverage results under seed 2026. The available evidence does not establish robust or statistically conclusive superiority over the existing PPO baseline.
+
+
+
+The existing PPO implementation and checkpoints should remain the protected reference.
+
+
+
+## 2. MAPPO Architecture and Technical Audit
+
+
+
+### 2.1 Architecture
+
+
+
+The implementation uses:
+
+
+
+- A shared decentralized actor receiving each agent's 26-dimensional local observation.
+
+- A centralized critic receiving the global state.
+
+- Three continuous action outputs per agent.
+
+- A shared policy identified as `shared_policy`.
+
+- RLlib's PPO learner and optimization objective.
+
+- Generalized Advantage Estimation (GAE).
+
+
+
+The global-state dimension follows:
+
+
+
+`7 × number_of_agents + 548`
+
+
+
+For four agents, the global-state dimension is 576. For 50 agents, it is 898.
+
+
+
+The actor consumes `local_obs`; the critic consumes `global_state`.
+
+
+
+### 2.2 Learner and gradient verification
+
+
+
+The Day 1 audit verified the following:
+
+
+
+- The actual learner connector produced the expected observation fields.
+
+- The connector batch contained finite advantages and value targets.
+
+- The actor and critic both received finite, non-zero gradients in a synthetic combined-loss backward pass.
+
+- RLlib's PPO loss source includes the centralized critic value loss in the total optimization objective.
+
+- RLlib's optimizer parameter collection recursively includes the registered actor and critic parameters.
+
+- The configured gradient clipping threshold is 0.5 using global norm clipping.
+
+
+
+The connector diagnostic used a synthetic batch of 12 observations:
+
+
+
+| Field | Observed shape or status |
+
+|---|---|
+
+| Local observations | `(12, 26)` |
+
+| Global states | `(12, 576)` |
+
+| Advantages | Present and finite |
+
+| Value targets | Present and finite |
+
+| Actor gradient tensors | 6, finite |
+
+| Critic gradient tensors | 6, finite |
+
+
+
+This establishes module-level gradient flow, not successful end-to-end learning.
+
+
+
+**Important limitation:** A real learner update and optimizer step were deliberately not executed during the audit. The source-level inspection and synthetic gradient test do not substitute for a live learner-update verification.
+
+
+
+### 2.3 Action handling
+
+
+
+The audit established that:
+
+
+
+- The MAPPO adapter exposes normalized actions in `\[-1, 1]`.
+
+- Normalized actions are clipped before physical action conversion.
+
+- The physical action conversion maps normalized values into the environment's velocity, pitch-rate, and yaw-rate bounds.
+
+- RLlib's environment-action clipping uses a separate environment-action copy.
+
+- The original sampled action and corresponding log probability are retained in the episode data.
+
+
+
+No stored-action/log-probability mismatch was identified in the inspected RLlib action pipeline.
+
+
+
+The frequency of Gaussian samples outside the normalized action bounds was not measured. Therefore, action saturation has not been ruled out quantitatively.
+
+
+
+### 2.4 Reward scaling
+
+
+
+The environment adapter accumulates unscaled episode rewards for raw-return reporting and applies `reward_scale = 0.05` to the reward supplied to RLlib.
+
+
+
+The raw episode-return accumulator is reset at the beginning of each episode.
+
+
+
+No double-scaling issue was identified in the inspected implementation.
+
+
+
+### 2.5 Metric extraction
+
+
+
+The audit verified the metric-flattening and extraction helpers and inspected RLlib's relevant metric aggregation and result-compilation paths.
+
+
+
+However, the exact live result dictionary from a MAPPO learner update was not observed. Some diagnostic fields may be absent depending on the runtime configuration.
+
+
+
+The validation training CSVs contained only six columns. They did not preserve policy loss, value loss, entropy, explained variance, KL divergence, or gradient norm.
+
+
+
+These metrics must not be reconstructed or presented as if they were recorded in those CSVs.
+
+
+
+## 3. Validation Experiment Design
+
+
+
+### 3.1 Training runs
+
+
+
+Three validation runs were completed.
+
+
+
+| Seed | Run ID | Checkpoint iteration |
+
+|---:|---|---|
+
+| 123 | `20261108_000525_151777` | 10 |
+
+| 2026 | `20261108_002340_785217` | 10 |
+
+| 31415 | `20261108_003040_192693` | 10 |
+
+
+
+### 3.2 Common configuration
+
+
+
+All three recorded configurations were identical except for the seed and run ID.
+
+
+
+| Parameter | Value |
+
+|---|---:|
+
+| Algorithm | MAPPO |
+
+| Agents | 4 |
+
+| Maximum episode steps | 128 |
+
+| Training stage | `static_world` |
+
+| Reward scale | 0.05 |
+
+| Training iterations | 10 |
+
+| Training batch size | 128 environment steps |
+
+| Minibatch size | 128 |
+
+| Epochs | 2 |
+
+| Learning rate | 0.0003 |
+
+| Hidden layers | 64, 64 |
+
+| Environment runners | 0 |
+
+| CPUs | 2 |
+
+| Object store | 100 MB |
+
+| Estimated agent samples per iteration | 512 |
+
+| Approximate optimizer updates per iteration | 8 |
+
+
+
+Each run completed 1,280 sampled environment steps.
+
+
+
+### 3.3 Evaluation methodology
+
+
+
+Each checkpoint was evaluated against the existing PPO baseline in:
+
+
+
+1\. `static_world`
+
+2\. `dynamic_obstacles`
+
+3\. `wind`
+
+
+
+Evaluation settings:
+
+
+
+- 10 episodes per model and stage.
+
+- Paired evaluation seeds 42–51.
+
+- Four agents.
+
+- Maximum episode length of 128 steps.
+
+- Deterministic Gaussian mean actions.
+
+- Reward scale 0.05.
+
+- No training during evaluation.
+
+
+
+All nine evaluation summaries recorded `training_performed: false`.
+
+
+
+The PPO baseline was preserved.
+
+
+
+## 4. Training-History Analysis
+
+
+
+The three `training_metrics.csv` files recorded:
+
+
+
+- Timestamp.
+
+- Iteration.
+
+- Iteration duration.
+
+- Cumulative sampled environment steps.
+
+- Mean scaled episode return.
+
+- Estimated raw episode return.
+
+
+
+The estimated raw training returns are summarized below.
+
+
+
+| Seed | Mean raw return | First iteration | Final iteration | Final change |
+
+|---:|---:|---:|---:|---:|
+
+| 123 | Approximately 364.00 | 320.10 | 168.20 | -47.5% |
+
+| 2026 | Approximately 390.86 | 326.51 | 347.54 | +6.4% |
+
+| 31415 | Approximately 411.43 | 426.20 | 365.24 | -14.3% |
+
+
+
+Interpretation:
+
+
+
+- Seed 123 showed substantial final-iteration deterioration.
+
+- Seed 2026 was comparatively stable, although its returns fluctuated.
+
+- Seed 31415 achieved the highest mean training return but finished below its initial value.
+
+- None of the runs demonstrated consistently increasing training return.
+
+
+
+These values are training-time estimates, not independent evaluation results. They should not be used alone to rank checkpoint quality.
+
+
+
+The training CSVs do not contain the additional learner diagnostics required to explain the observed fluctuations.
+
+
+
+## 5. Cross-Stage Evaluation Results
+
+
+
+### 5.1 Seed 123
+
+
+
+| Stage | PPO return | MAPPO return | Return change | PPO coverage | MAPPO coverage | Coverage change |
+
+|---|---:|---:|---:|---:|---:|---:|
+
+| Static | 353.278 | 260.624 | -92.654 | 4.3620 | 4.2784 | -0.0836 |
+
+| Dynamic | 346.037 | 270.183 | -75.854 | 4.3436 | 4.2588 | -0.0848 |
+
+| Wind | 312.351 | 264.173 | -48.179 | 4.2388 | 4.1680 | -0.0708 |
+
+
+
+Seed 123 underperformed the PPO baseline in mean return and coverage across all three stages.
+
+
+
+### 5.2 Seed 2026
+
+
+
+| Stage | PPO return | MAPPO return | Return change | PPO coverage | MAPPO coverage | Coverage change |
+
+|---|---:|---:|---:|---:|---:|---:|
+
+| Static | 353.278 | 347.451 | -5.827 | 4.3620 | 4.7856 | +0.4236 |
+
+| Dynamic | 346.037 | 361.611 | +15.574 | 4.3436 | 4.9708 | +0.6272 |
+
+| Wind | 312.351 | 343.992 | +31.640 | 4.2388 | 4.9456 | +0.7068 |
+
+
+
+Seed 2026 produced the strongest overall validation result.
+
+
+
+Coverage improved in all three stages. Mean return was slightly lower in static-world evaluation and higher in dynamic-obstacle and wind evaluations.
+
+
+
+Collision counts were unchanged from the baseline in all three stages.
+
+
+
+### 5.3 Seed 31415
+
+
+
+| Stage | PPO return | MAPPO return | Return change | PPO coverage | MAPPO coverage | Coverage change |
+
+|---|---:|---:|---:|---:|---:|---:|
+
+| Static | 353.278 | 309.499 | -43.779 | 4.3620 | 3.8444 | -0.5176 |
+
+| Dynamic | 346.037 | 314.303 | -31.734 | 4.3436 | 4.0068 | -0.3368 |
+
+| Wind | 312.351 | 299.173 | -13.179 | 4.2388 | 4.0436 | -0.1952 |
+
+
+
+Seed 31415 underperformed the PPO baseline in mean return and coverage across all three stages.
+
+
+
+## 6. Paired Episode Results
+
+
+
+The following table reports paired wins, losses, and ties for MAPPO relative to PPO.
+
+
+
+| Seed / Stage | Return W/L/T | Coverage W/L/T |
+
+|---|---|---|
+
+| 123 / Static | 2 / 8 / 0 | 5 / 5 / 0 |
+
+| 123 / Dynamic | 2 / 8 / 0 | 3 / 7 / 0 |
+
+| 123 / Wind | 2 / 8 / 0 | 5 / 5 / 0 |
+
+| 2026 / Static | 5 / 5 / 0 | 8 / 2 / 0 |
+
+| 2026 / Dynamic | 5 / 5 / 0 | 9 / 1 / 0 |
+
+| 2026 / Wind | 8 / 2 / 0 | 8 / 2 / 0 |
+
+| 31415 / Static | 1 / 9 / 0 | 4 / 6 / 0 |
+
+| 31415 / Dynamic | 4 / 6 / 0 | 4 / 6 / 0 |
+
+| 31415 / Wind | 5 / 5 / 0 | 5 / 5 / 0 |
+
+
+
+### Collision observations
+
+
+
+- Seed 123: static-world collision count increased by 0.2 per episode on average; dynamic-obstacle count increased by 0.1; wind count decreased by 0.1.
+
+- Seed 2026: collision counts matched the baseline in all three stages.
+
+- Seed 31415: static and dynamic counts matched the baseline; wind count decreased by 0.1.
+
+
+
+These are averages over ten episodes. They do not establish collision-rate equivalence or safety.
+
+
+
+## 7. Statistical Assessment
+
+
+
+Paired 95% confidence intervals were calculated using a t critical value of 2.262 with nine degrees of freedom and ten paired episodes.
+
+
+
+### 7.1 Mean return differences
+
+
+
+| Seed / Stage | MAPPO minus PPO | 95% confidence interval |
+
+|---|---:|---|
+
+| 123 / Static | -92.654 | \[-178.253, -7.055] |
+
+| 123 / Dynamic | -75.854 | \[-131.898, -19.810] |
+
+| 123 / Wind | -48.179 | \[-105.150, 8.793] |
+
+| 2026 / Static | -5.827 | \[-53.781, 42.126] |
+
+| 2026 / Dynamic | +15.574 | \[-27.453, 58.601] |
+
+| 2026 / Wind | +31.640 | \[-22.490, 85.771] |
+
+| 31415 / Static | -43.779 | \[-86.616, -0.942] |
+
+| 31415 / Dynamic | -31.734 | \[-97.720, 34.251] |
+
+| 31415 / Wind | -13.179 | \[-95.992, 69.635] |
+
+
+
+The return confidence intervals include zero for all three seed-2026 stage comparisons. Thus, the positive mean return changes in dynamic and wind stages are promising but not conclusive.
+
+
+
+### 7.2 Mean coverage differences
+
+
+
+| Seed / Stage | MAPPO minus PPO | 95% confidence interval |
+
+|---|---:|---|
+
+| 123 / Static | -0.084 | \[-0.851, 0.684] |
+
+| 123 / Dynamic | -0.085 | \[-0.716, 0.547] |
+
+| 123 / Wind | -0.071 | \[-0.828, 0.687] |
+
+| 2026 / Static | +0.424 | \[-0.190, 1.037] |
+
+| 2026 / Dynamic | +0.627 | \[0.150, 1.104] |
+
+| 2026 / Wind | +0.707 | \[0.145, 1.269] |
+
+| 31415 / Static | -0.518 | \[-1.109, 0.074] |
+
+| 31415 / Dynamic | -0.337 | \[-1.171, 0.498] |
+
+| 31415 / Wind | -0.195 | \[-1.193, 0.803] |
+
+
+
+Seed 2026 showed positive coverage confidence intervals in dynamic-obstacle and wind evaluations. Its static-world coverage interval included zero.
+
+
+
+### 7.3 Statistical limitations
+
+
+
+- Each comparison used only ten paired episodes.
+
+- Nine stage/seed comparisons were examined.
+
+- No multiple-comparison correction was applied.
+
+- Coverage interval findings should therefore be treated as exploratory.
+
+- Three training seeds are insufficient to establish broad robustness.
+
+- Confidence intervals describe the paired evaluation results under the tested setup, not general performance across arbitrary environments or seeds.
+
+
+
+## 8. Final PPO-versus-MAPPO Assessment
+
+
+
+| Evaluation criterion | Assessment |
+
+|---|---|
+
+| MAPPO architecture | Structurally verified |
+
+| Connector and observation structure | Verified with synthetic batch |
+
+| Actor and critic gradient flow | Verified at module level |
+
+| RLlib PPO loss integration | Source-level verified |
+
+| Optimizer parameter inclusion | Source-level verified |
+
+| Action normalization and clipping | Source-level audited |
+
+| Reward scaling | Source-level audited |
+
+| Live learner update | Not verified in this audit |
+
+| Robust reward improvement | Not established |
+
+| Coverage improvement | Promising for seed 2026 |
+
+| Seed sensitivity | Clearly observed |
+
+| Collision improvement | No consistent improvement established |
+
+| Production readiness | Not established |
+
+
+
+### Overall conclusion
+
+
+
+The current MAPPO implementation is suitable for continued controlled research, but the validation evidence does not justify replacing the established PPO baseline.
+
+
+
+Seed 2026 is the leading experimental candidate because it achieved higher mean coverage across all tested stages and positive mean return changes in dynamic-obstacle and wind evaluations.
+
+
+
+However, all three seed-2026 return confidence intervals include zero. The unadjusted intervals for seed 123 static-world, seed 123 dynamic-obstacle, and seed 31415 static-world are entirely negative; the other six include zero. No multiple-comparison correction was applied, so these results are exploratory. The other two seeds underperformed overall. MAPPO's performance is sensitive to initialization and training randomness under the tested configuration.
+
+
+
+PPO should remain the reference implementation.
+
+
+
+## 9. Recommendations
+
+
+
+1\. Preserve the current PPO implementation, benchmarks, and checkpoints.
+
+2\. Preserve all three MAPPO validation checkpoints and their associated evaluation artifacts.
+
+3\. Retain seed 2026 as an experimental candidate, not as a production model.
+
+4\. Do not change architecture, optimizer, action handling, or reward scaling without a specific diagnostic finding.
+
+5\. Do not repeat the same ten-iteration experiment without a new testable hypothesis.
+
+6\. If additional research is approved, investigate seed sensitivity and training instability first.
+
+7\. Improve training diagnostics in future experiments so that policy loss, value loss, entropy, KL divergence, explained variance, and gradient information can be reviewed.
+
+8\. Consider larger paired evaluation samples and a predeclared statistical analysis plan before making performance claims.
+
+9\. Keep actual learner-update verification separate from synthetic module-gradient tests.
+
+10\. Document all future changes and preserve the existing experiment artifacts.
+
+
+
+## 10. Reproducibility Artifacts
+
+
+
+### Documentation
+
+
+
+- `documentation/MAPPO_DAY1_AUDIT.md`
+
+- `documentation/MAPPO_DAY2_EXPERIMENT_PROTOCOL.md`
+
+- `documentation/MAPPO_FINAL_VALIDATION_REPORT.md` (this report)
+
+
+
+### Training records
+
+
+
+- `results/mappo_validation/run_20261108_000525_151777/run_config.json`
+
+- `results/mappo_validation/run_20261108_000525_151777/training_metrics.csv`
+
+- `results/mappo_validation/run_20261108_002340_785217/run_config.json`
+
+- `results/mappo_validation/run_20261108_002340_785217/training_metrics.csv`
+
+- `results/mappo_validation/run_20261108_003040_192693/run_config.json`
+
+- `results/mappo_validation/run_20261108_003040_192693/training_metrics.csv`
+
+
+
+### Evaluation records
+
+
+
+The nine evaluation folders are under:
+
+
+
+`results/mappo_validation_evaluation/`
+
+
+
+They contain the seed-specific static-world, dynamic-obstacle, and wind evaluation summaries.
+
+
+
+### Checkpoints
+
+
+
+The three iteration-10 checkpoints are under:
+
+
+
+- `checkpoints/mappo_validation/run_20261108_000525_151777/`
+
+- `checkpoints/mappo_validation/run_20261108_002340_785217/`
+
+- `checkpoints/mappo_validation/run_20261108_003040_192693/`
+
+
+
+## 11. Project Integrity and Final Status
+
+
+
+The completed audit and validation review did not require changes to the PPO implementation or existing checkpoints.
+
+
+
+The full regression suite previously completed with:
+
+
+
+- 342 passed
+
+- 2 skipped
+
+- 0 failures
+
+
+
+The two skipped tests are opt-in real-training smoke tests. No real MAPPO learner update or new training run was performed as part of the Day 1 audit and Day 2 evidence review.
+
+
+
+The following safeguards remain in force:
+
+
+
+- Existing PPO code and checkpoints are protected.
+
+- Existing MAPPO checkpoints and experiment records are preserved.
+
+- No new training or evaluation is authorized by this report.
+
+- Any future training, evaluation, learner-update test, or code modification requires explicit approval.
+
+
+
+**Final project status:** MAPPO implementation audited; three-seed validation completed; cross-stage evidence reviewed; no robust superiority over PPO established; further experimentation deferred pending a justified research question.
+
+
+
+---
+
+
+
+**End of report**
+

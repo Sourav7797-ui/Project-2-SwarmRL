@@ -1,0 +1,29 @@
+{
+  "checkpoint": "C:\\Users\\mishr\\OneDrive\\Desktop\\SwarmRL\\checkpoints\\mappo_validation\\run_20261108_003040_192693\\iteration_0010",
+  "episodes_per_model": 10,
+  "first_seed": 42,
+  "max_episode_steps": 128,
+  "num_agents": 4,
+  "stage": "wind",
+  "stage_override": "wind",
+  "reward_scale": 0.05,
+  "include_global_state": true,
+  "ray_cpus": 2,
+  "object_store_mb": 100,
+  "created_at": "2026-11-08T00:40:05.988176",
+  "models": [
+    "baseline",
+    "trained"
+  ],
+  "metrics": [
+    "raw_episode_return",
+    "coverage_pct",
+    "collision_events",
+    "agent_steps",
+    "environment_steps",
+    "collisions_per_1k_agent_steps"
+  ],
+  "action_selection": "deterministic Gaussian mean",
+  "raw_episode_return_source": "SwarmRLlibEnv.raw_episode_return",
+  "training_performed": false
+}
